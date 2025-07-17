@@ -36,6 +36,15 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
     }
     $shortName = str_replace($mailbox, '', $folderFull);
 
+    $shortName = $folderFull;
+    if (strpos($folderFull, $mailbox) === 0) {
+        $shortName = substr($folderFull, strlen($mailbox));
+    }
+    if (strpos($shortName, $delimiter) !== false) {
+        $parts = explode($delimiter, $shortName);
+        $shortName = end($parts);
+    }
+
     // Ordner öffnen
     $box = @imap_reopen($inbox, $folderFull);
     if (!$box) return [
