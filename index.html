@@ -24,29 +24,43 @@
     // Felder mit LocalStorage vorbelegen
     ['server', 'port', 'user', 'ssl'].forEach(id => {
       const el = document.getElementById(id);
-      if (localStorage.getItem(id)) el.value = localStorage.getItem(id);
+      if (localStorage.getItem(id)) {
+        el.value = localStorage.getItem(id);
+        console.debug(`[LocalStorage] Feld "${id}" mit Wert "${el.value}" vorbelegt.`);
+      }
     });
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      console.debug('Formular wurde abgeschickt.');
 
       // Speichern
       ['server', 'port', 'user', 'ssl'].forEach(id => {
         localStorage.setItem(id, document.getElementById(id).value);
+        console.debug(`[LocalStorage] Feld "${id}" mit Wert "${document.getElementById(id).value}" gespeichert.`);
       });
 
       const formData = new FormData(form);
       formData.set('ssl', document.getElementById('ssl').checked ? 'true' : 'false');
+      console.debug('Formulardaten:', Object.fromEntries(formData.entries()));
 
       output.textContent = 'Verbindung wird aufgebaut...';
 
-      const res = await fetch('imap-scan.php', {
-        method: 'POST',
-        body: formData
-      });
+      try {
+        const res = await fetch('imap-scan.php', {
+          method: 'POST',
+          body: formData
+        });
+        console.debug('Antwort von imap-scan.php erhalten:', res);
 
-      const json = await res.json();
-      output.textContent = JSON.stringify(json, null, 2);
+        const json = await res.json();
+        console.debug('JSON-Antwort:', json);
+
+        output.textContent = JSON.stringify(json, null, 2);
+      } catch (err) {
+        console.error('Fehler beim Abrufen der IMAP-Daten:', err);
+        output.textContent = 'Fehler: ' + err;
+      }
 
       // später: window.location.href = 'tree.html'; und Übergabe über localStorage/sessionStorage
     });
