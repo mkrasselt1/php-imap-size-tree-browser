@@ -22,35 +22,73 @@ if (!$inbox) {
 }
 
 $folders = imap_list($inbox, $mailbox, '*');
-$result = [];
 
-function getFolderSize($inbox, $mailbox, $folderFull) {
+function getFolderTree($inbox, $mailbox, $folderFull) {
+    $shortName = str_replace($mailbox, '', $folderFull);
+
+    // Ordner öffnen
     $box = @imap_reopen($inbox, $folderFull);
-    if (!$box) return 0;
+    if (!$box) return [
+        'name' => $shortName,
+        'size' => 0,
+        'children' => [],
+        'biggestMails' => []
+    ];
 
     $numMessages = imap_num_msg($inbox);
     $totalSize = 0;
+    $mails = [];
 
+    // Alle Mails durchgehen und Größe sammeln
     for ($i = 1; $i <= $numMessages; $i++) {
-        $totalSize += imap_fetch_overview($inbox, $i)[0]->size ?? 0;
+        $overview = imap_fetch_overview($inbox, $i);
+        if ($overview && isset($overview[0]->size)) {
+            $mail = [
+                'subject' => $overview[0]->subject ?? '(kein Betreff)',
+                'from' => $overview[0]->from ?? '',
+                'date' => $overview[0]->date ?? '',
+                'size' => $overview[0]->size,
+                'uid' => $overview[0]->uid ?? $i
+            ];
+            $mails[] = $mail;
+            $totalSize += $overview[0]->size;
+        }
     }
 
-    return $totalSize;
+    // Die 10 größten Mails
+    usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
+    $biggestMails = array_slice($mails, 0, 10);
+
+    // Subfolder suchen
+    $subfolders = imap_list($inbox, $folderFull, '*');
+    $children = [];
+    if ($subfolders) {
+        foreach ($subfolders as $sub) {
+            if ($sub !== $folderFull) {
+                $children[] = getFolderTree($inbox, $mailbox, $sub);
+            }
+        }
+    }
+
+    return [
+        'name' => $shortName,
+        'size' => $totalSize,
+        'children' => $children,
+        'biggestMails' => $biggestMails
+    ];
 }
 
-foreach ($folders as $fullName) {
-    $shortName = str_replace($mailbox, '', $fullName);
-    $size = getFolderSize($inbox, $mailbox, $fullName);
+$tree = [
+    'name' => 'Root',
+    'children' => []
+];
 
-    $result[] = [
-        'name' => $shortName,
-        'size' => $size
-    ];
+if ($folders) {
+    foreach ($folders as $fullName) {
+        $tree['children'][] = getFolderTree($inbox, $mailbox, $fullName);
+    }
 }
 
 imap_close($inbox);
 
-echo json_encode([
-    'name' => 'Root',
-    'children' => $result
-]);
+echo json_encode($tree);
