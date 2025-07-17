@@ -43,7 +43,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         $overview = imap_fetch_overview($inbox, $i);
         if ($overview && isset($overview[0]->size)) {
             $mail = [
-                'name' => $overview[0]->subject ?? '(kein Betreff)',
+                'name' => imap_utf8($overview[0]->subject ?? '(kein Betreff)'),
                 'from' => $overview[0]->from ?? '',
                 'date' => $overview[0]->date ?? '',
                 'size' => $overview[0]->size,
@@ -107,4 +107,4 @@ if ($folders) {
 
 imap_close($inbox);
 
-echo json_encode($tree);
+echo json_encode($tree, JSON_UNESCAPED_UNICODE);
