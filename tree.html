@@ -37,96 +37,122 @@
   <div id="info">Klicke auf ein Element, um Details anzuzeigen</div>
 
   <script>
-    const formatSize = (bytes) => {
-      const units = ['B', 'KB', 'MB', 'GB'];
-      let i = 0;
-      while (bytes >= 1024 && i < units.length - 1) {
-        bytes /= 1024;
-        i++;
-      }
-      return `${bytes.toFixed(1)} ${units[i]}`;
-    };
-
-    const data = JSON.parse(localStorage.getItem("imapTreeData"));
-    if (data) {
-      drawTreemap(data);
-    } else {
-      document.getElementById("info").innerText = "Keine Daten gefunden. Bitte zuerst analysieren!";
+  const formatSize = (bytes) => {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    while (bytes >= 1024 && i < units.length - 1) {
+      bytes /= 1024;
+      i++;
     }
+    return `${bytes.toFixed(1)} ${units[i]}`;
+  };
 
-    function drawTreemap(data) {
-      const width = document.getElementById("chart").clientWidth;
-      const height = document.getElementById("chart").clientHeight;
+  const data = JSON.parse(localStorage.getItem("imapTreeData"));
+  let history = [];
+  let currentData = data;
 
-      const root = d3.hierarchy(data)
-        .sum(d => d.size || 0)
-        .sort((a, b) => b.value - a.value);
+  function drawTreemap(data) {
+    document.getElementById("chart").innerHTML = "";
+    const width = document.getElementById("chart").clientWidth;
+    const height = document.getElementById("chart").clientHeight;
 
-      d3.treemap()
-        .size([width, height])
-        .padding(1)
-        (root);
+    const root = d3.hierarchy(data)
+      .sum(d => d.size || 0)
+      .sort((a, b) => b.value - a.value);
 
-      const chart = d3.select("#chart").style("position", "relative");
+    d3.treemap()
+      .size([width, height])
+      .padding(0.5)
+      (root);
 
-      const color = d3.scaleOrdinal(d3.schemeCategory10);
+    const chart = d3.select("#chart").style("position", "relative");
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
 
-      // Eltern-Ordner als eigene Boxen mit Abstand visualisieren
-      chart.selectAll(".parent-node")
-        .data(root.descendants().filter(d => d.depth === 1)) // Nur direkte Kinder von Root
-        .enter().append("div")
-        .attr("class", "parent-node")
-        .style("position", "absolute")
-        .style("left", d => `${d.x0 - 8}px`)
-        .style("top", d => `${d.y0 - 8}px`)
-        .style("width", d => `${d.x1 - d.x0 + 16}px`)
-        .style("height", d => `${d.y1 - d.y0 + 16}px`)
-        .style("border", "3px solid #333")
-        .style("border-radius", "12px")
-        .style("pointer-events", "none")
-        .style("box-sizing", "border-box");
+    // Eltern-Ordner als eigene Boxen mit Abstand visualisieren
+    chart.selectAll(".parent-node")
+      .data(root.descendants().filter(d => d.depth === 1))
+      .enter().append("div")
+      .attr("class", "parent-node")
+      .style("position", "absolute")
+      .style("left", d => `${d.x0 - 8}px`)
+      .style("top", d => `${d.y0 - 8}px`)
+      .style("width", d => `${d.x1 - d.x0 + 16}px`)
+      .style("height", d => `${d.y1 - d.y0 + 16}px`)
+      .style("border", "3px solid #333")
+      .style("border-radius", "12px")
+      .style("pointer-events", "auto")
+      .style("box-sizing", "border-box")
+      .on("dblclick", (event, d) => {
+        if (d.data.children && d.data.children.length > 0) {
+          history.push(currentData);
+          currentData = d.data;
+          drawTreemap(currentData);
+          showBackButton();
+        }
+      });
 
-      chart.selectAll(".node")
-        .data(root.leaves())
-        .enter().append("div")
-        .attr("class", "node")
-        .style("left", d => `${d.x0}px`)
-        .style("top", d => `${d.y0}px`)
-        .style("width", d => `${d.x1 - d.x0}px`)
-        .style("height", d => `${d.y1 - d.y0}px`)
-        .style("background", d => {
-          if (d.data.type === "mail") return "#ffe0e0";
-          if (d.data.type === "other-mails") return "#e0e0ff";
-          return color(d.parent.data.name);
-        })
-        .style("font-size", "10px")
-        .style("padding", "2px")
-        .style("overflow", "hidden")
-        .style("border-radius", d => d.data.type === "mail" ? "8px" : "0")
-        .style("border-style", d => d.data.type === "mail" ? "dashed" : "solid")
-        .html(d => {
-          if (d.data.type === "mail") {
-            return `📧 ${d.data.name}`;
-          }
-          if (d.data.type === "other-mails") {
-            return `📦 ${d.data.name}`;
-          }
-          return `📁 ${d.data.name}`;
-        })
-        .on("click", (event, d) => {
-          let info = `<strong>Name:</strong> ${d.data.name}<br>`;
-          info += `<strong>Größe:</strong> ${formatSize(d.data.size || 0)}<br>`;
-          if (d.data.type === "mail") {
-            info += `<strong>Von:</strong> ${d.data.from}<br>`;
-            info += `<strong>Datum:</strong> ${d.data.date}<br>`;
-            info += `<strong>UID:</strong> ${d.data.uid}<br>`;
-          }
-          if (d.data.type === "other-mails") {
-            info += `<em>Zusammengefasste Mails</em>`;
-          }
-          document.getElementById("info").innerHTML = info;
-        });
+    chart.selectAll(".node")
+      .data(root.leaves())
+      .enter().append("div")
+      .attr("class", "node")
+      .style("left", d => `${d.x0}px`)
+      .style("top", d => `${d.y0}px`)
+      .style("width", d => `${d.x1 - d.x0}px`)
+      .style("height", d => `${d.y1 - d.y0}px`)
+      .style("background", d => {
+        if (d.data.type === "mail") return "#ffe0e0";
+        if (d.data.type === "other-mails") return "#e0e0ff";
+        return color(d.parent.data.name);
+      })
+      .style("font-size", "10px")
+      .style("padding", "2px")
+      .style("overflow", "hidden")
+      .style("border-radius", d => d.data.type === "mail" ? "8px" : "0")
+      .style("border-style", d => d.data.type === "mail" ? "dashed" : "solid")
+      .html(d => {
+        if (d.data.type === "mail") {
+          return `📧 ${d.data.name}`;
+        }
+        if (d.data.type === "other-mails") {
+          return `📦 ${d.data.name}`;
+        }
+        return `📁 ${d.data.name}`;
+      })
+      .on("click", (event, d) => {
+        let info = `<strong>Name:</strong> ${d.data.name}<br>`;
+        info += `<strong>Größe:</strong> ${formatSize(d.data.size || 0)}<br>`;
+        if (d.data.type === "mail") {
+          info += `<strong>Von:</strong> ${d.data.from}<br>`;
+          info += `<strong>Datum:</strong> ${d.data.date}<br>`;
+          info += `<strong>UID:</strong> ${d.data.uid}<br>`;
+        }
+        if (d.data.type === "other-mails") {
+          info += `<em>Zusammengefasste Mails</em>`;
+        }
+        document.getElementById("info").innerHTML = info;
+        showBackButton();
+      });
+  }
+
+  function showBackButton() {
+    const infoDiv = document.getElementById("info");
+    if (history.length > 0) {
+      infoDiv.innerHTML += `<br><button id="backBtn">⬅️ Zurück</button>`;
+      document.getElementById("backBtn").onclick = () => {
+        currentData = history.pop();
+        drawTreemap(currentData);
+        if (history.length === 0) {
+          infoDiv.innerHTML = "Klicke auf ein Element, um Details anzuzeigen";
+        }
+      };
     }
+  }
+
+  if (data) {
+    drawTreemap(data);
+  } else {
+    document.getElementById("info").innerText = "Keine Daten gefunden. Bitte zuerst analysieren!";
+  }
   </script>
 </body>
 </html>
