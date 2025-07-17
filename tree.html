@@ -81,7 +81,7 @@
               ? `📧 ${child.name} (${formatSize(child.size || 0)})`
               : child.type === "other-mails"
               ? `📦 $>child.name} (${formatSize(child.size || 0)})`
-              : `📁 ${child.name} (${formatSize(child.size || 0)})`;
+              : `📁 ${child.name} (${formatSize(child.childrenTotalSize || 0)})`;
 
           // Collapse/Expand Button
           if (child.children && child.children.length > 0) {
