@@ -32,7 +32,6 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         'name' => $shortName,
         'size' => 0,
         'children' => [],
-        'biggestMails' => []
     ];
 
     $numMessages = imap_num_msg($inbox);
@@ -44,24 +43,42 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         $overview = imap_fetch_overview($inbox, $i);
         if ($overview && isset($overview[0]->size)) {
             $mail = [
-                'subject' => $overview[0]->subject ?? '(kein Betreff)',
+                'name' => $overview[0]->subject ?? '(kein Betreff)',
                 'from' => $overview[0]->from ?? '',
                 'date' => $overview[0]->date ?? '',
                 'size' => $overview[0]->size,
-                'uid' => $overview[0]->uid ?? $i
+                'uid' => $overview[0]->uid ?? $i,
+                'type' => 'mail'
             ];
             $mails[] = $mail;
             $totalSize += $overview[0]->size;
         }
     }
 
-    // Die 10 größten Mails
+    // Die 10 größten Mails als eigene Knoten
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
     $biggestMails = array_slice($mails, 0, 10);
 
-    // Subfolder suchen
-    $subfolders = imap_list($inbox, $folderFull, '*');
+    // Restliche Mails zusammenfassen
+    $otherMails = array_slice($mails, 10);
+    $otherSize = 0;
+    foreach ($otherMails as $mail) {
+        $otherSize += $mail['size'];
+    }
     $children = [];
+    foreach ($biggestMails as $mail) {
+        $children[] = $mail;
+    }
+    if ($otherSize > 0) {
+        $children[] = [
+            'name' => 'Weitere Mails',
+            'size' => $otherSize,
+            'type' => 'other-mails'
+        ];
+    }
+
+    // Subfolder suchen, aber nur echte Unterordner
+    $subfolders = imap_list($inbox, $mailbox, $shortName . '/*');
     if ($subfolders) {
         foreach ($subfolders as $sub) {
             if ($sub !== $folderFull) {
@@ -73,8 +90,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
     return [
         'name' => $shortName,
         'size' => $totalSize,
-        'children' => $children,
-        'biggestMails' => $biggestMails
+        'children' => $children
     ];
 }
 

@@ -79,17 +79,37 @@
         .style("top", d => `${d.y0}px`)
         .style("width", d => `${d.x1 - d.x0}px`)
         .style("height", d => `${d.y1 - d.y0}px`)
-        .style("background", d => color(d.parent.data.name))
+        .style("background", d => {
+          if (d.data.type === "mail") return "#ffe0e0";
+          if (d.data.type === "other-mails") return "#e0e0ff";
+          return color(d.parent.data.name);
+        })
         .style("font-size", "10px")
         .style("padding", "2px")
         .style("overflow", "hidden")
-        .text(d => d.data.name)
+        .style("border-radius", d => d.data.type === "mail" ? "8px" : "0")
+        .style("border-style", d => d.data.type === "mail" ? "dashed" : "solid")
+        .html(d => {
+          if (d.data.type === "mail") {
+            return `📧 ${d.data.name}`;
+          }
+          if (d.data.type === "other-mails") {
+            return `📦 ${d.data.name}`;
+          }
+          return `📁 ${d.data.name}`;
+        })
         .on("click", (event, d) => {
-          document.getElementById("info").innerHTML = `
-            <strong>Ordner:</strong> ${d.data.name}<br>
-            <strong>Größe:</strong> ${formatSize(d.data.size || 0)}<br>
-            <strong>Pfad:</strong> ${d.data.path || ''}
-          `;
+          let info = `<strong>Name:</strong> ${d.data.name}<br>`;
+          info += `<strong>Größe:</strong> ${formatSize(d.data.size || 0)}<br>`;
+          if (d.data.type === "mail") {
+            info += `<strong>Von:</strong> ${d.data.from}<br>`;
+            info += `<strong>Datum:</strong> ${d.data.date}<br>`;
+            info += `<strong>UID:</strong> ${d.data.uid}<br>`;
+          }
+          if (d.data.type === "other-mails") {
+            info += `<em>Zusammengefasste Mails</em>`;
+          }
+          document.getElementById("info").innerHTML = info;
         });
     }
   </script>
