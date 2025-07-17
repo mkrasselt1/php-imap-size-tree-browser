@@ -1,255 +1,281 @@
 <!DOCTYPE html>
 <html lang="de">
-<head>
-  <meta charset="UTF-8">
-  <title>IMAP Speicher-Visualisierung</title>
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-    }
-    #chart {
-      width: 100vw;
-      height: 90vh;
-    }
-    .node {
-      box-sizing: border-box;
-      position: absolute;
-      overflow: hidden;
-      border: 1px solid #fff;
-    }
-    .node:hover {
-      outline: 2px solid #000;
-    }
-    #info {
-      padding: 1em;
-      font-size: 0.9em;
-      background: #f8f8f8;
-      border-top: 1px solid #ccc;
-      height: 10vh;
-      overflow: auto;
-    }
-    .sidebar-children {
-      margin-left: 0;
-    }
-  </style>
-</head>
-<body>
-  <div style="display: flex; height: 90vh;">
-    <div id="sidebar" style="width: 280px; background: #f0f0f0; overflow-y: auto; border-right: 1px solid #ccc; padding: 12px 0;">
-      <!-- Ordnerbaum wird hier eingefügt -->
+  <head>
+    <meta charset="UTF-8" />
+    <title>IMAP Speicher-Visualisierung</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+      }
+      #chart {
+        width: 100vw;
+        height: 90vh;
+      }
+      .node {
+        box-sizing: border-box;
+        position: absolute;
+        overflow: hidden;
+        border: 1px solid #fff;
+      }
+      .node:hover {
+        outline: 2px solid #000;
+      }
+      #info {
+        padding: 1em;
+        font-size: 0.9em;
+        background: #f8f8f8;
+        border-top: 1px solid #ccc;
+        height: 10vh;
+        overflow: auto;
+      }
+      .sidebar-children {
+        margin-left: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="display: flex; height: 90vh">
+      <div
+        id="sidebar"
+        style="
+          width: 280px;
+          background: #f0f0f0;
+          overflow-y: auto;
+          border-right: 1px solid #ccc;
+          padding: 12px 0;
+        "
+      >
+        <!-- Ordnerbaum wird hier eingefügt -->
+      </div>
+      <div id="chart" style="flex: 1; position: relative"></div>
     </div>
-    <div id="chart" style="flex: 1; position: relative;"></div>
-  </div>
-  <div id="info">Klicke auf ein Element, um Details anzuzeigen</div>
+    <div id="info">Klicke auf ein Element, um Details anzuzeigen</div>
 
-  <script>
-  const formatSize = (bytes) => {
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0;
-    while (bytes >= 1024 && i < units.length - 1) {
-      bytes /= 1024;
-      i++;
-    }
-    return `${bytes.toFixed(1)} ${units[i]}`;
-  };
+    <script>
+      const formatSize = (bytes) => {
+        const units = ["B", "KB", "MB", "GB"];
+        let i = 0;
+        while (bytes >= 1024 && i < units.length - 1) {
+          bytes /= 1024;
+          i++;
+        }
+        return `${bytes.toFixed(1)} ${units[i]}`;
+      };
 
-  const data = JSON.parse(localStorage.getItem("imapTreeData"));
-  let history = [];
-  let currentData = data;
-  let selectedUid = null;
+      const data = JSON.parse(localStorage.getItem("imapTreeData"));
+      let history = [];
+      let currentData = data;
+      let selectedUid = null;
 
-  function renderSidebar(tree, parentEl, depth = 0) {
-    tree.children?.forEach(child => {
-      const el = document.createElement('div');
-      el.style.paddingLeft = (depth * 18) + "px";
-      el.style.cursor = "pointer";
-      el.style.fontWeight = child.children ? "bold" : "normal";
-      el.style.background = highlightSidebar(child) ? "#d0eaff" : "";
-      el.textContent = child.type === "mail" ? `📧 ${child.name}` :
-                       child.type === "other-mails" ? `📦 ${child.name}` :
-                       `📁 ${child.name}`;
+      function renderSidebar(tree, parentEl, depth = 0) {
+        tree.children?.forEach((child) => {
+          const el = document.createElement("div");
+          el.style.paddingLeft = depth * 18 + "px";
+          el.style.cursor = "pointer";
+          el.style.fontWeight = child.children ? "bold" : "normal";
+          el.style.background = highlightSidebar(child) ? "#d0eaff" : "";
+          el.textContent =
+            child.type === "mail"
+              ? `📧 ${child.name} (${formatSize(child.size || 0)})`
+              : child.type === "other-mails"
+              ? `📦 $>child.name} (${formatSize(child.size || 0)})`
+              : `📁 ${child.name} (${formatSize(child.size || 0)})`;
 
-      // Collapse/Expand Button
-      if (child.children && child.children.length > 0) {
-        const toggleBtn = document.createElement('span');
-        toggleBtn.textContent = " ▶";
-        toggleBtn.style.cursor = "pointer";
-        toggleBtn.style.fontWeight = "normal";
-        toggleBtn.style.color = "#888";
-        toggleBtn.onclick = (e) => {
-          e.stopPropagation();
-          if (el.nextSibling && el.nextSibling.classList.contains("sidebar-children")) {
-            el.nextSibling.style.display = el.nextSibling.style.display === "none" ? "block" : "none";
-            toggleBtn.textContent = el.nextSibling.style.display === "none" ? " ▶" : " ▼";
+          // Collapse/Expand Button
+          if (child.children && child.children.length > 0) {
+            const toggleBtn = document.createElement("span");
+            toggleBtn.textContent = " ▶";
+            toggleBtn.style.cursor = "pointer";
+            toggleBtn.style.fontWeight = "normal";
+            toggleBtn.style.color = "#888";
+            toggleBtn.onclick = (e) => {
+              e.stopPropagation();
+              if (
+                el.nextSibling &&
+                el.nextSibling.classList.contains("sidebar-children")
+              ) {
+                el.nextSibling.style.display =
+                  el.nextSibling.style.display === "none" ? "block" : "none";
+                toggleBtn.textContent =
+                  el.nextSibling.style.display === "none" ? " ▶" : " ▼";
+              }
+            };
+            el.appendChild(toggleBtn);
           }
-        };
-        el.appendChild(toggleBtn);
+
+          el.onclick = (e) => {
+            e.stopPropagation();
+            if (child.type === "mail" || child.type === "other-mails") {
+              selectedUid = child.uid || child.name;
+              highlightChart(selectedUid);
+              showInfo(child);
+            } else if (child.children) {
+              history.push(currentData);
+              currentData = child;
+              drawTreemap(currentData);
+              showBackButton();
+            }
+            renderSidebar(currentData, document.getElementById("sidebar"));
+          };
+          parentEl.appendChild(el);
+
+          // Children-Container für Collapse/Expand
+          if (child.children && child.children.length > 0) {
+            const childrenContainer = document.createElement("div");
+            childrenContainer.classList.add("sidebar-children");
+            childrenContainer.style.display = "block";
+            renderSidebar(child, childrenContainer, depth + 1);
+            parentEl.appendChild(childrenContainer);
+          }
+        });
       }
 
-      el.onclick = (e) => {
-        e.stopPropagation();
-        if (child.type === "mail" || child.type === "other-mails") {
-          selectedUid = child.uid || child.name;
-          highlightChart(selectedUid);
-          showInfo(child);
-        } else if (child.children) {
-          history.push(currentData);
-          currentData = child;
-          drawTreemap(currentData);
-          showBackButton();
-        }
-        renderSidebar(currentData, document.getElementById("sidebar"));
-      };
-      parentEl.appendChild(el);
-
-      // Children-Container für Collapse/Expand
-      if (child.children && child.children.length > 0) {
-        const childrenContainer = document.createElement('div');
-        childrenContainer.classList.add("sidebar-children");
-        childrenContainer.style.display = "block";
-        renderSidebar(child, childrenContainer, depth + 1);
-        parentEl.appendChild(childrenContainer);
+      function highlightSidebar(child) {
+        if (!selectedUid) return false;
+        return (
+          (child.uid && child.uid === selectedUid) ||
+          (child.name && child.name === selectedUid)
+        );
       }
-    });
-  }
 
-  function highlightSidebar(child) {
-    if (!selectedUid) return false;
-    return (child.uid && child.uid === selectedUid) ||
-           (child.name && child.name === selectedUid);
-  }
+      function highlightChart(uid) {
+        d3.selectAll(".node").style("outline", (d) => {
+          if (
+            (d.data.uid && d.data.uid === uid) ||
+            (d.data.name && d.data.name === uid)
+          ) {
+            return "3px solid #0077cc";
+          }
+          return "";
+        });
+      }
 
-  function highlightChart(uid) {
-    d3.selectAll(".node")
-      .style("outline", d => {
-        if ((d.data.uid && d.data.uid === uid) ||
-            (d.data.name && d.data.name === uid)) {
-          return "3px solid #0077cc";
+      function showInfo(d) {
+        let info = `<strong>Name:</strong> ${d.name}<br>`;
+        info += `<strong>Größe:</strong> ${formatSize(d.size || 0)}<br>`;
+        if (d.type === "mail") {
+          info += `<strong>Von:</strong> ${d.from}<br>`;
+          info += `<strong>Datum:</strong> ${d.date}<br>`;
+          info += `<strong>UID:</strong> ${d.uid}<br>`;
         }
-        return "";
-      });
-  }
-
-  function showInfo(d) {
-    let info = `<strong>Name:</strong> ${d.name}<br>`;
-    info += `<strong>Größe:</strong> ${formatSize(d.size || 0)}<br>`;
-    if (d.type === "mail") {
-      info += `<strong>Von:</strong> ${d.from}<br>`;
-      info += `<strong>Datum:</strong> ${d.date}<br>`;
-      info += `<strong>UID:</strong> ${d.uid}<br>`;
-    }
-    if (d.type === "other-mails") {
-      info += `<em>Zusammengefasste Mails</em>`;
-    }
-    document.getElementById("info").innerHTML = info;
-    showBackButton();
-  }
-
-  function drawTreemap(data) {
-    document.getElementById("chart").innerHTML = "";
-    document.getElementById("sidebar").innerHTML = "";
-    renderSidebar(data, document.getElementById("sidebar"));
-
-    const width = document.getElementById("chart").clientWidth;
-    const height = document.getElementById("chart").clientHeight;
-
-    const root = d3.hierarchy(data)
-      .sum(d => d.size || 0)
-      .sort((a, b) => b.value - a.value);
-
-    d3.treemap()
-      .size([width, height])
-      .padding(0.5)
-      (root);
-
-    const chart = d3.select("#chart").style("position", "relative");
-    const color = d3.scaleOrdinal(d3.schemeCategory10);
-
-    // Eltern-Ordner als eigene Boxen mit Abstand visualisieren
-    chart.selectAll(".parent-node")
-      .data(root.descendants().filter(d => d.depth === 1))
-      .enter().append("div")
-      .attr("class", "parent-node")
-      .style("position", "absolute")
-      .style("left", d => `${d.x0 - 4}px`)
-      .style("top", d => `${d.y0 - 4}px`)
-      .style("width", d => `${d.x1 - d.x0 + 8}px`)
-      .style("height", d => `${d.y1 - d.y0 + 8}px`)
-      .style("border", "2px solid #333")
-      .style("border-radius", "12px")
-      .style("pointer-events", "none")
-      .style("box-sizing", "border-box")
-      .style("background", "rgba(255,255,255,0.5)")
-      .style("z-index", "1")
-      .append("span")
-      .attr("class", "parent-label")
-      .style("position", "absolute")
-      .style("left", "8px")
-      .style("top", "4px")
-      .style("font-weight", "bold")
-      .style("font-size", "13px")
-      .style("color", "#333")
-      .text(d => `📁 ${d.data.name}`);
-
-    // Die Blätter (Mails, Sammelknoten) kommen darüber
-    chart.selectAll(".node")
-      .data(root.leaves())
-      .enter().append("div")
-      .attr("class", "node")
-      .style("position", "absolute")
-      .style("left", d => `${d.x0}px`)
-      .style("top", d => `${d.y0}px`)
-      .style("width", d => `${d.x1 - d.x0}px`)
-      .style("height", d => `${d.y1 - d.y0}px`)
-      .style("background", d => {
-        if (d.data.type === "mail") return "#ffe0e0";
-        if (d.data.type === "other-mails") return "#e0e0ff";
-        return color(d.parent.data.name);
-      })
-      .style("font-size", "10px")
-      .style("padding", "2px")
-      .style("overflow", "hidden")
-      .style("border-radius", d => d.data.type === "mail" ? "8px" : "0")
-      .style("border-style", d => d.data.type === "mail" ? "dashed" : "solid")
-      .style("z-index", "2")
-      .html(d => {
-        if (d.data.type === "mail") {
-          return `📧 ${d.data.name}`;
+        if (d.type === "other-mails") {
+          info += `<em>Zusammengefasste Mails</em>`;
         }
-        if (d.data.type === "other-mails") {
-          return `📦 ${d.data.name}`;
-        }
-        return `📁 ${d.data.name}`;
-      })
-      .on("click", (event, d) => {
-        selectedUid = d.data.uid || d.data.name;
-        highlightChart(selectedUid);
-        showInfo(d.data);
-        renderSidebar(currentData, document.getElementById("sidebar"));
-      });
-  }
+        document.getElementById("info").innerHTML = info;
+        showBackButton();
+      }
 
-  function showBackButton() {
-    const infoDiv = document.getElementById("info");
-    if (history.length > 0) {
-      infoDiv.innerHTML += `<br><button id="backBtn">⬅️ Zurück</button>`;
-      document.getElementById("backBtn").onclick = () => {
-        currentData = history.pop();
-        drawTreemap(currentData);
-        if (history.length === 0) {
-          infoDiv.innerHTML = "Klicke auf ein Element, um Details anzuzeigen";
-        }
-      };
-    }
-  }
+      function drawTreemap(data) {
+        document.getElementById("chart").innerHTML = "";
+        document.getElementById("sidebar").innerHTML = "";
+        renderSidebar(data, document.getElementById("sidebar"));
 
-  if (data) {
-    drawTreemap(data);
-  } else {
-    document.getElementById("info").innerText = "Keine Daten gefunden. Bitte zuerst analysieren!";
-  }
-  </script>
-</body>
+        const width = document.getElementById("chart").clientWidth;
+        const height = document.getElementById("chart").clientHeight;
+
+        const root = d3
+          .hierarchy(data)
+          .sum((d) => d.size || 0)
+          .sort((a, b) => b.value - a.value);
+
+        d3.treemap().size([width, height]).padding(0.5)(root);
+
+        const chart = d3.select("#chart").style("position", "relative");
+        const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+        // Eltern-Ordner als eigene Boxen mit Abstand visualisieren
+        chart
+          .selectAll(".parent-node")
+          .data(root.descendants().filter((d) => d.depth === 1))
+          .enter()
+          .append("div")
+          .attr("class", "parent-node")
+          .style("position", "absolute")
+          .style("left", (d) => `${d.x0 - 4}px`)
+          .style("top", (d) => `${d.y0 - 4}px`)
+          .style("width", (d) => `${d.x1 - d.x0 + 8}px`)
+          .style("height", (d) => `${d.y1 - d.y0 + 8}px`)
+          .style("border", "2px solid #333")
+          .style("border-radius", "12px")
+          .style("pointer-events", "none")
+          .style("box-sizing", "border-box")
+          .style("background", "rgba(255,255,255,0.5)")
+          .style("z-index", "1")
+          .append("span")
+          .attr("class", "parent-label")
+          .style("position", "absolute")
+          .style("left", "8px")
+          .style("top", "4px")
+          .style("font-weight", "bold")
+          .style("font-size", "13px")
+          .style("color", "#333")
+          .text((d) => `📁 ${d.data.name}`);
+
+        // Die Blätter (Mails, Sammelknoten) kommen darüber
+        chart
+          .selectAll(".node")
+          .data(root.leaves())
+          .enter()
+          .append("div")
+          .attr("class", "node")
+          .style("position", "absolute")
+          .style("left", (d) => `${d.x0}px`)
+          .style("top", (d) => `${d.y0}px`)
+          .style("width", (d) => `${d.x1 - d.x0}px`)
+          .style("height", (d) => `${d.y1 - d.y0}px`)
+          .style("background", (d) => {
+            if (d.data.type === "mail") return "#ffe0e0";
+            if (d.data.type === "other-mails") return "#e0e0ff";
+            return color(d.parent.data.name);
+          })
+          .style("font-size", "10px")
+          .style("padding", "2px")
+          .style("overflow", "hidden")
+          .style("border-radius", (d) => (d.data.type === "mail" ? "8px" : "0"))
+          .style("border-style", (d) =>
+            d.data.type === "mail" ? "dashed" : "solid"
+          )
+          .style("z-index", "2")
+          .html((d) => {
+            if (d.data.type === "mail") {
+              return `📧 ${d.data.name}`;
+            }
+            if (d.data.type === "other-mails") {
+              return `📦 ${d.data.name}`;
+            }
+            return `📁 ${d.data.name}`;
+          })
+          .on("click", (event, d) => {
+            selectedUid = d.data.uid || d.data.name;
+            highlightChart(selectedUid);
+            showInfo(d.data);
+            renderSidebar(currentData, document.getElementById("sidebar"));
+          });
+      }
+
+      function showBackButton() {
+        const infoDiv = document.getElementById("info");
+        if (history.length > 0) {
+          infoDiv.innerHTML += `<br><button id="backBtn">⬅️ Zurück</button>`;
+          document.getElementById("backBtn").onclick = () => {
+            currentData = history.pop();
+            drawTreemap(currentData);
+            if (history.length === 0) {
+              infoDiv.innerHTML =
+                "Klicke auf ein Element, um Details anzuzeigen";
+            }
+          };
+        }
+      }
+
+      if (data) {
+        drawTreemap(data);
+      } else {
+        document.getElementById("info").innerText =
+          "Keine Daten gefunden. Bitte zuerst analysieren!";
+      }
+    </script>
+  </body>
 </html>
