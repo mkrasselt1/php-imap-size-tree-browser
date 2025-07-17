@@ -59,12 +59,12 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         }
     }
 
-    // Die 10 größten Mails als eigene Knoten
+    // Die 20 größten Mails als eigene Knoten
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $biggestMails = array_slice($mails, 0, 10);
+    $biggestMails = array_slice($mails, 0, 20);
 
     // Restliche Mails zusammenfassen
-    $otherMails = array_slice($mails, 10);
+    $otherMails = array_slice($mails, 20);
     $otherSize = 0;
     foreach ($otherMails as $mail) {
         $otherSize += $mail['size'];

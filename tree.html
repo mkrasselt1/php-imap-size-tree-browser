@@ -30,6 +30,9 @@
       height: 10vh;
       overflow: auto;
     }
+    .sidebar-children {
+      margin-left: 0;
+    }
   </style>
 </head>
 <body>
@@ -67,6 +70,24 @@
       el.textContent = child.type === "mail" ? `📧 ${child.name}` :
                        child.type === "other-mails" ? `📦 ${child.name}` :
                        `📁 ${child.name}`;
+
+      // Collapse/Expand Button
+      if (child.children && child.children.length > 0) {
+        const toggleBtn = document.createElement('span');
+        toggleBtn.textContent = " ▶";
+        toggleBtn.style.cursor = "pointer";
+        toggleBtn.style.fontWeight = "normal";
+        toggleBtn.style.color = "#888";
+        toggleBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (el.nextSibling && el.nextSibling.classList.contains("sidebar-children")) {
+            el.nextSibling.style.display = el.nextSibling.style.display === "none" ? "block" : "none";
+            toggleBtn.textContent = el.nextSibling.style.display === "none" ? " ▶" : " ▼";
+          }
+        };
+        el.appendChild(toggleBtn);
+      }
+
       el.onclick = (e) => {
         e.stopPropagation();
         if (child.type === "mail" || child.type === "other-mails") {
@@ -82,8 +103,14 @@
         renderSidebar(currentData, document.getElementById("sidebar"));
       };
       parentEl.appendChild(el);
-      if (child.children) {
-        renderSidebar(child, parentEl, depth + 1);
+
+      // Children-Container für Collapse/Expand
+      if (child.children && child.children.length > 0) {
+        const childrenContainer = document.createElement('div');
+        childrenContainer.classList.add("sidebar-children");
+        childrenContainer.style.display = "block";
+        renderSidebar(child, childrenContainer, depth + 1);
+        parentEl.appendChild(childrenContainer);
       }
     });
   }
