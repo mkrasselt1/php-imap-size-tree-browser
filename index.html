@@ -66,6 +66,10 @@
         });
 
         const formData = new FormData(form);
+        for (var [key, value] of formData.entries()) {
+          console.log(key, value);
+        }
+        console.log(...formData);
         formData.set(
           "ssl",
           document.getElementById("ssl").checked ? "true" : "false"
