@@ -28,6 +28,12 @@ if (!$inbox) {
 $folders = imap_list($inbox, $mailbox, '*');
 
 function getFolderTree($inbox, $mailbox, $folderFull) {
+    // Trenne den Ordnernamen anhand des IMAP-Trennzeichens (z.B. Punkt oder Slash)
+    $delimiter = '.';
+    $info = imap_getmailboxes($inbox, $mailbox, '*');
+    if ($info && isset($info[0]->delimiter)) {
+        $delimiter = $info[0]->delimiter;
+    }
     $shortName = str_replace($mailbox, '', $folderFull);
 
     // Ordner öffnen
@@ -82,7 +88,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
     }
 
     // Subfolder suchen, aber nur echte Unterordner
-    $subfolders = imap_list($inbox, $mailbox, $shortName . '/*');
+    $subfolders = imap_list($inbox, $mailbox, $shortName . $delimiter . '*');
     if ($subfolders) {
         foreach ($subfolders as $sub) {
             if ($sub !== $folderFull) {
@@ -101,7 +107,6 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
 
     // Ordner (children) nach Größe sortieren: zuerst große Ordner/Mails
     usort($children, function($a, $b) {
-        // Falls kein size vorhanden, nimm childrenTotalSize, sonst 0
         $sizeA = $a['size'] ?? ($a['childrenTotalSize'] ?? 0);
         $sizeB = $b['size'] ?? ($b['childrenTotalSize'] ?? 0);
         return $sizeB <=> $sizeA;
