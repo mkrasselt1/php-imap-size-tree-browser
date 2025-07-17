@@ -1,69 +1,97 @@
 <!DOCTYPE html>
 <html lang="de">
-<head>
-  <meta charset="UTF-8">
-  <title>IMAP Analyse</title>
-</head>
-<body>
-  <h1>IMAP-Konto analysieren</h1>
-  <form id="imapForm">
-    <label>IMAP Server: <input type="text" id="server" required></label><br>
-    <label>Port: <input type="number" id="port" value="993" required></label><br>
-    <label>SSL: <input type="checkbox" id="ssl" checked></label><br>
-    <label>Benutzername: <input type="text" id="user" required></label><br>
-    <label>Passwort: <input type="password" id="pass" required></label><br>
-    <button type="submit">Analysieren</button>
-  </form>
+  <head>
+    <meta charset="UTF-8" />
+    <title>IMAP Analyse</title>
+  </head>
+  <body>
+    <h1>IMAP-Konto analysieren</h1>
+    <form id="imapForm">
+      <label for="server"
+        >IMAP Server:
+        <input type="text" id="server" name="server" required /></label
+      ><br />
+      <label for="port"
+        >Port:
+        <input
+          type="number"
+          id="port"
+          name="port"
+          value="993"
+          required /></label
+      ><br />
+      <label for="ssl"
+        >SSL: <input type="checkbox" id="ssl" name="ssl" checked /></label
+      ><br />
+      <label for="user"
+        >Benutzername:
+        <input type="text" id="user" name="user" required /></label
+      ><br />
+      <label for="pass"
+        >Passwort:
+        <input type="password" id="pass" name="pass" required /></label
+      ><br />
+      <button type="submit">Analysieren</button>
+    </form>
 
-  <pre id="output"></pre>
+    <pre id="output"></pre>
 
-  <script>
-    const form = document.getElementById('imapForm');
-    const output = document.getElementById('output');
+    <script>
+      const form = document.getElementById("imapForm");
+      const output = document.getElementById("output");
 
-    // Felder mit LocalStorage vorbelegen
-    ['server', 'port', 'user', 'ssl'].forEach(id => {
-      const el = document.getElementById(id);
-      if (localStorage.getItem(id)) {
-        el.value = localStorage.getItem(id);
-        console.debug(`[LocalStorage] Feld "${id}" mit Wert "${el.value}" vorbelegt.`);
-      }
-    });
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      console.debug('Formular wurde abgeschickt.');
-
-      // Speichern
-      ['server', 'port', 'user', 'ssl'].forEach(id => {
-        localStorage.setItem(id, document.getElementById(id).value);
-        console.debug(`[LocalStorage] Feld "${id}" mit Wert "${document.getElementById(id).value}" gespeichert.`);
+      // Felder mit LocalStorage vorbelegen
+      ["server", "port", "user", "ssl"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (localStorage.getItem(id)) {
+          el.value = localStorage.getItem(id);
+          console.debug(
+            `[LocalStorage] Feld "${id}" mit Wert "${el.value}" vorbelegt.`
+          );
+        }
       });
 
-      const formData = new FormData(form);
-      formData.set('ssl', document.getElementById('ssl').checked ? 'true' : 'false');
-      console.debug('Formulardaten:', Object.fromEntries(formData.entries()));
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        console.debug("Formular wurde abgeschickt.");
 
-      output.textContent = 'Verbindung wird aufgebaut...';
-
-      try {
-        const res = await fetch('imap-scan.php', {
-          method: 'POST',
-          body: formData
+        // Speichern
+        ["server", "port", "user", "ssl"].forEach((id) => {
+          localStorage.setItem(id, document.getElementById(id).value);
+          console.debug(
+            `[LocalStorage] Feld "${id}" mit Wert "${
+              document.getElementById(id).value
+            }" gespeichert.`
+          );
         });
-        console.debug('Antwort von imap-scan.php erhalten:', res);
 
-        const json = await res.json();
-        console.debug('JSON-Antwort:', json);
+        const formData = new FormData(form);
+        formData.set(
+          "ssl",
+          document.getElementById("ssl").checked ? "true" : "false"
+        );
+        console.debug("Formulardaten:", Object.fromEntries(formData.entries()));
 
-        output.textContent = JSON.stringify(json, null, 2);
-      } catch (err) {
-        console.error('Fehler beim Abrufen der IMAP-Daten:', err);
-        output.textContent = 'Fehler: ' + err;
-      }
+        output.textContent = "Verbindung wird aufgebaut...";
 
-      // später: window.location.href = 'tree.html'; und Übergabe über localStorage/sessionStorage
-    });
-  </script>
-</body>
+        try {
+          const res = await fetch("imap-scan.php", {
+            method: "POST",
+            body: formData,
+          });
+          console.debug("Antwort von imap-scan.php erhalten:", res);
+
+          const json = await res.json();
+          console.debug("JSON-Antwort:", json);
+
+          output.textContent = JSON.stringify(json, null, 2);
+        } catch (err) {
+          console.error("Fehler beim Abrufen der IMAP-Daten:", err);
+          output.textContent = "Fehler: " + err;
+        }
+
+        // später: window.location.href = 'tree.html'; und Übergabe über localStorage/sessionStorage
+      });
+    </script>
+  </body>
 </html>
