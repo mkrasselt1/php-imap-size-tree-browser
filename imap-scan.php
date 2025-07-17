@@ -34,14 +34,13 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
     $box = @imap_reopen($inbox, $folderFull);
     if (!$box) return [
         'name' => $shortName,
-        'size' => 0,
         'children' => [],
         'childrenTotalSize' => 0
     ];
 
     $numMessages = imap_num_msg($inbox);
-    $totalSize = 0;
     $mails = [];
+    $totalSize = 0;
 
     // Alle Mails durchgehen und Größe sammeln
     for ($i = 1; $i <= $numMessages; $i++) {
@@ -102,7 +101,6 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
 
     return [
         'name' => $shortName,
-        'size' => $totalSize,
         'children' => $children,
         'childrenTotalSize' => $childrenTotalSize
     ];
