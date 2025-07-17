@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>IMAP Speicher-Visualisierung</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+    }
+    #chart {
+      width: 100vw;
+      height: 90vh;
+    }
+    .node {
+      box-sizing: border-box;
+      position: absolute;
+      overflow: hidden;
+      border: 1px solid #fff;
+    }
+    .node:hover {
+      outline: 2px solid #000;
+    }
+    #info {
+      padding: 1em;
+      font-size: 0.9em;
+      background: #f8f8f8;
+      border-top: 1px solid #ccc;
+      height: 10vh;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="chart"></div>
+  <div id="info">Klicke auf ein Element, um Details anzuzeigen</div>
+
+  <script>
+    const formatSize = (bytes) => {
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let i = 0;
+      while (bytes >= 1024 && i < units.length - 1) {
+        bytes /= 1024;
+        i++;
+      }
+      return `${bytes.toFixed(1)} ${units[i]}`;
+    };
+
+    fetch('imap-scan.php')
+      .then(res => res.json())
+      .then(data => drawTreemap(data));
+
+    function drawTreemap(data) {
+      const width = document.getElementById("chart").clientWidth;
+      const height = document.getElementById("chart").clientHeight;
+
+      const root = d3.hierarchy(data)
+        .sum(d => d.size || 0)
+        .sort((a, b) => b.value - a.value);
+
+      d3.treemap()
+        .size([width, height])
+        .padding(1)
+        (root);
+
+      const chart = d3.select("#chart").style("position", "relative");
+
+      const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+      chart.selectAll(".node")
+        .data(root.leaves())
+        .enter().append("div")
+        .attr("class", "node")
+        .style("left", d => `${d.x0}px`)
+        .style("top", d => `${d.y0}px`)
+        .style("width", d => `${d.x1 - d.x0}px`)
+        .style("height", d => `${d.y1 - d.y0}px`)
+        .style("background", d => color(d.parent.data.name))
+        .style("font-size", "10px")
+        .style("padding", "2px")
+        .style("overflow", "hidden")
+        .text(d => d.data.name)
+        .on("click", (event, d) => {
+          document.getElementById("info").innerHTML = `
+            <strong>Ordner:</strong> ${d.data.name}<br>
+            <strong>Größe:</strong> ${formatSize(d.data.size || 0)
