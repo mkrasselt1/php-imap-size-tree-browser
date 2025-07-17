@@ -71,6 +71,21 @@
 
       const color = d3.scaleOrdinal(d3.schemeCategory10);
 
+      // Eltern-Ordner als eigene Boxen mit Abstand visualisieren
+      chart.selectAll(".parent-node")
+        .data(root.descendants().filter(d => d.depth === 1)) // Nur direkte Kinder von Root
+        .enter().append("div")
+        .attr("class", "parent-node")
+        .style("position", "absolute")
+        .style("left", d => `${d.x0 - 8}px`)
+        .style("top", d => `${d.y0 - 8}px`)
+        .style("width", d => `${d.x1 - d.x0 + 16}px`)
+        .style("height", d => `${d.y1 - d.y0 + 16}px`)
+        .style("border", "3px solid #333")
+        .style("border-radius", "12px")
+        .style("pointer-events", "none")
+        .style("box-sizing", "border-box");
+
       chart.selectAll(".node")
         .data(root.leaves())
         .enter().append("div")
