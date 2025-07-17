@@ -1,4 +1,8 @@
 <?php
+set_time_limit(300);
+ini_set('max_execution_time', 300);
+ini_set('memory_limit', '512M');
+
 header('Content-Type: application/json');
 
 $server = $_POST['server'] ?? '';
@@ -32,6 +36,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         'name' => $shortName,
         'size' => 0,
         'children' => [],
+        'childrenTotalSize' => 0
     ];
 
     $numMessages = imap_num_msg($inbox);
@@ -87,10 +92,19 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         }
     }
 
+    // Summe aller Kindgrößen berechnen
+    $childrenTotalSize = 0;
+    foreach ($children as $child) {
+        if (isset($child['size'])) {
+            $childrenTotalSize += $child['size'];
+        }
+    }
+
     return [
         'name' => $shortName,
         'size' => $totalSize,
-        'children' => $children
+        'children' => $children,
+        'childrenTotalSize' => $childrenTotalSize
     ];
 }
 
