@@ -33,6 +33,22 @@
       .sidebar-children {
         margin-left: 0;
       }
+      /* Neu: Stil für das Mail-Popup */
+      #mail-popup {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border: 2px solid #0077cc;
+        border-radius: 10px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        padding: 24px;
+        z-index: 9999;
+        max-width: 420px;
+        max-height: 70vh;
+        overflow-y: auto;
+      }
     </style>
   </head>
   <body>
@@ -111,6 +127,7 @@
               selectedUid = child.uid || child.name;
               highlightChart(selectedUid);
               showInfo(child);
+              showMailPopup(child);
             } else if (child.children) {
               history.push(currentData);
               currentData = child;
@@ -268,6 +285,75 @@
             }
           };
         }
+      }
+
+      async function fetchMailContent(mail) {
+        // Zugangsdaten aus LocalStorage holen
+        const server = localStorage.getItem("server");
+        const port = localStorage.getItem("port");
+        const user = localStorage.getItem("user");
+        const pass = localStorage.getItem("pass");
+        const ssl = localStorage.getItem("ssl");
+        const folder = mail.folderFull || mail.folder || ""; // ggf. anpassen!
+        const uid = mail.uid;
+
+        const formData = new FormData();
+        formData.append("server", server);
+        formData.append("port", port);
+        formData.append("user", user);
+        formData.append("pass", pass);
+        formData.append("ssl", ssl);
+        formData.append("folder", folder);
+        formData.append("uid", uid);
+
+        const res = await fetch("imap-mail.php", {
+          method: "POST",
+          body: formData,
+        });
+        const json = await res.json();
+        return json;
+      }
+
+      function showMailPopup(mail) {
+        fetchMailContent(mail).then((data) => {
+          let popup = document.getElementById("mail-popup");
+          if (!popup) {
+            popup = document.createElement("div");
+            popup.id = "mail-popup";
+            popup.style.position = "fixed";
+            popup.style.left = "50%";
+            popup.style.top = "50%";
+            popup.style.transform = "translate(-50%, -50%)";
+            popup.style.background = "#fff";
+            popup.style.border = "2px solid #0077cc";
+            popup.style.borderRadius = "10px";
+            popup.style.boxShadow = "0 4px 16px rgba(0,0,0,0.2)";
+            popup.style.padding = "24px";
+            popup.style.zIndex = "9999";
+            popup.style.maxWidth = "420px";
+            popup.style.maxHeight = "70vh";
+            popup.style.overflowY = "auto";
+            document.body.appendChild(popup);
+          }
+          popup.innerHTML = `
+            <h2>📧 ${data.subject}</h2>
+            <div><strong>Von:</strong> ${data.from}</div>
+            <div><strong>Datum:</strong> ${data.date}</div>
+            <div><strong>Body:</strong><br><pre style="white-space:pre-wrap;">${data.body}</pre></div>
+            <br>
+            <button id="closeMailPopup">Schließen</button>
+          `;
+          document.getElementById("closeMailPopup").onclick = () => {
+            popup.remove();
+          };
+
+          // Beispiel für die Anzeige im Popup:
+          if (mail.attachments && mail.attachments.length > 0) {
+            mail.attachments.forEach((att) => {
+              popup.innerHTML += `<a download="${att.filename}" href="data:application/octet-stream;base64,${att.data}">${att.filename} (${att.size} Bytes)</a><br>`;
+            });
+          }
+        });
       }
 
       if (data) {
