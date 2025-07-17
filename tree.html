@@ -33,7 +33,12 @@
   </style>
 </head>
 <body>
-  <div id="chart"></div>
+  <div style="display: flex; height: 90vh;">
+    <div id="sidebar" style="width: 280px; background: #f0f0f0; overflow-y: auto; border-right: 1px solid #ccc; padding: 12px 0;">
+      <!-- Ordnerbaum wird hier eingefügt -->
+    </div>
+    <div id="chart" style="flex: 1; position: relative;"></div>
+  </div>
   <div id="info">Klicke auf ein Element, um Details anzuzeigen</div>
 
   <script>
@@ -50,9 +55,76 @@
   const data = JSON.parse(localStorage.getItem("imapTreeData"));
   let history = [];
   let currentData = data;
+  let selectedUid = null;
+
+  function renderSidebar(tree, parentEl, depth = 0) {
+    tree.children?.forEach(child => {
+      const el = document.createElement('div');
+      el.style.paddingLeft = (depth * 18) + "px";
+      el.style.cursor = "pointer";
+      el.style.fontWeight = child.children ? "bold" : "normal";
+      el.style.background = highlightSidebar(child) ? "#d0eaff" : "";
+      el.textContent = child.type === "mail" ? `📧 ${child.name}` :
+                       child.type === "other-mails" ? `📦 ${child.name}` :
+                       `📁 ${child.name}`;
+      el.onclick = (e) => {
+        e.stopPropagation();
+        if (child.type === "mail" || child.type === "other-mails") {
+          selectedUid = child.uid || child.name;
+          highlightChart(selectedUid);
+          showInfo(child);
+        } else if (child.children) {
+          history.push(currentData);
+          currentData = child;
+          drawTreemap(currentData);
+          showBackButton();
+        }
+        renderSidebar(currentData, document.getElementById("sidebar"));
+      };
+      parentEl.appendChild(el);
+      if (child.children) {
+        renderSidebar(child, parentEl, depth + 1);
+      }
+    });
+  }
+
+  function highlightSidebar(child) {
+    if (!selectedUid) return false;
+    return (child.uid && child.uid === selectedUid) ||
+           (child.name && child.name === selectedUid);
+  }
+
+  function highlightChart(uid) {
+    d3.selectAll(".node")
+      .style("outline", d => {
+        if ((d.data.uid && d.data.uid === uid) ||
+            (d.data.name && d.data.name === uid)) {
+          return "3px solid #0077cc";
+        }
+        return "";
+      });
+  }
+
+  function showInfo(d) {
+    let info = `<strong>Name:</strong> ${d.name}<br>`;
+    info += `<strong>Größe:</strong> ${formatSize(d.size || 0)}<br>`;
+    if (d.type === "mail") {
+      info += `<strong>Von:</strong> ${d.from}<br>`;
+      info += `<strong>Datum:</strong> ${d.date}<br>`;
+      info += `<strong>UID:</strong> ${d.uid}<br>`;
+    }
+    if (d.type === "other-mails") {
+      info += `<em>Zusammengefasste Mails</em>`;
+    }
+    document.getElementById("info").innerHTML = info;
+    showBackButton();
+  }
 
   function drawTreemap(data) {
     document.getElementById("chart").innerHTML = "";
+    document.getElementById("sidebar").innerHTML = "";
+    renderSidebar(data, document.getElementById("sidebar"));
+
     const width = document.getElementById("chart").clientWidth;
     const height = document.getElementById("chart").clientHeight;
 
@@ -125,18 +197,10 @@
         return `📁 ${d.data.name}`;
       })
       .on("click", (event, d) => {
-        let info = `<strong>Name:</strong> ${d.data.name}<br>`;
-        info += `<strong>Größe:</strong> ${formatSize(d.data.size || 0)}<br>`;
-        if (d.data.type === "mail") {
-          info += `<strong>Von:</strong> ${d.data.from}<br>`;
-          info += `<strong>Datum:</strong> ${d.data.date}<br>`;
-          info += `<strong>UID:</strong> ${d.data.uid}<br>`;
-        }
-        if (d.data.type === "other-mails") {
-          info += `<em>Zusammengefasste Mails</em>`;
-        }
-        document.getElementById("info").innerHTML = info;
-        showBackButton();
+        selectedUid = d.data.uid || d.data.name;
+        highlightChart(selectedUid);
+        showInfo(d.data);
+        renderSidebar(currentData, document.getElementById("sidebar"));
       });
   }
 
