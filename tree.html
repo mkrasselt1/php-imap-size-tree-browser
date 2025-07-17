@@ -74,27 +74,32 @@
       .enter().append("div")
       .attr("class", "parent-node")
       .style("position", "absolute")
-      .style("left", d => `${d.x0 - 8}px`)
-      .style("top", d => `${d.y0 - 8}px`)
-      .style("width", d => `${d.x1 - d.x0 + 16}px`)
-      .style("height", d => `${d.y1 - d.y0 + 16}px`)
-      .style("border", "3px solid #333")
+      .style("left", d => `${d.x0 - 4}px`)
+      .style("top", d => `${d.y0 - 4}px`)
+      .style("width", d => `${d.x1 - d.x0 + 8}px`)
+      .style("height", d => `${d.y1 - d.y0 + 8}px`)
+      .style("border", "2px solid #333")
       .style("border-radius", "12px")
-      .style("pointer-events", "auto")
+      .style("pointer-events", "none")
       .style("box-sizing", "border-box")
-      .on("dblclick", (event, d) => {
-        if (d.data.children && d.data.children.length > 0) {
-          history.push(currentData);
-          currentData = d.data;
-          drawTreemap(currentData);
-          showBackButton();
-        }
-      });
+      .style("background", "rgba(255,255,255,0.5)")
+      .style("z-index", "1")
+      .append("span")
+      .attr("class", "parent-label")
+      .style("position", "absolute")
+      .style("left", "8px")
+      .style("top", "4px")
+      .style("font-weight", "bold")
+      .style("font-size", "13px")
+      .style("color", "#333")
+      .text(d => `📁 ${d.data.name}`);
 
+    // Die Blätter (Mails, Sammelknoten) kommen darüber
     chart.selectAll(".node")
       .data(root.leaves())
       .enter().append("div")
       .attr("class", "node")
+      .style("position", "absolute")
       .style("left", d => `${d.x0}px`)
       .style("top", d => `${d.y0}px`)
       .style("width", d => `${d.x1 - d.x0}px`)
@@ -109,6 +114,7 @@
       .style("overflow", "hidden")
       .style("border-radius", d => d.data.type === "mail" ? "8px" : "0")
       .style("border-style", d => d.data.type === "mail" ? "dashed" : "solid")
+      .style("z-index", "2")
       .html(d => {
         if (d.data.type === "mail") {
           return `📧 ${d.data.name}`;
