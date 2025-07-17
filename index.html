@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>IMAP Analyse</title>
+</head>
+<body>
+  <h1>IMAP-Konto analysieren</h1>
+  <form id="imapForm">
+    <label>IMAP Server: <input type="text" id="server" required></label><br>
+    <label>Port: <input type="number" id="port" value="993" required></label><br>
+    <label>SSL: <input type="checkbox" id="ssl" checked></label><br>
+    <label>Benutzername: <input type="text" id="user" required></label><br>
+    <label>Passwort: <input type="password" id="pass" required></label><br>
+    <button type="submit">Analysieren</button>
+  </form>
+
+  <pre id="output"></pre>
+
+  <script>
+    const form = document.getElementById('imapForm');
+    const output = document.getElementById('output');
+
+    // Felder mit LocalStorage vorbelegen
+    ['server', 'port', 'user', 'ssl'].forEach(id => {
+      const el = document.getElementById(id);
+      if (localStorage.getItem(id)) el.value = localStorage.getItem(id);
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Speichern
+      ['server', 'port', 'user', 'ssl'].forEach(id => {
+        localStorage.setItem(id, document.getElementById(id).value);
+      });
+
+      const formData = new FormData(form);
+      formData.set('ssl', document.getElementById('ssl').checked ? 'true' : 'false');
+
+      output.textContent = 'Verbindung wird aufgebaut...';
+
+      const res = await fetch('imap-scan.php', {
+        method: 'POST',
+        body: formData
+      });
+
+      const json = await res.json();
+      output.textContent = JSON.stringify(json, null, 2);
+
+      // später: window.location.href = 'tree.html'; und Übergabe über localStorage/sessionStorage
+    });
+  </script>
+</body>
+</html>
