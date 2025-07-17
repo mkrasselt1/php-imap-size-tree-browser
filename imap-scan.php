@@ -99,6 +99,14 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         }
     }
 
+    // Ordner (children) nach Größe sortieren: zuerst große Ordner/Mails
+    usort($children, function($a, $b) {
+        // Falls kein size vorhanden, nimm childrenTotalSize, sonst 0
+        $sizeA = $a['size'] ?? ($a['childrenTotalSize'] ?? 0);
+        $sizeB = $b['size'] ?? ($b['childrenTotalSize'] ?? 0);
+        return $sizeB <=> $sizeA;
+    });
+
     return [
         'name' => $shortName,
         'children' => $children,
