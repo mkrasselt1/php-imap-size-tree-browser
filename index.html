@@ -41,7 +41,7 @@
       const output = document.getElementById("output");
 
       // Felder mit LocalStorage vorbelegen
-      ["server", "port", "user", "ssl"].forEach((id) => {
+      ["server", "port", "user", "ssl", "pass"].forEach((id) => {
         const el = document.getElementById(id);
         if (localStorage.getItem(id)) {
           el.value = localStorage.getItem(id);
@@ -56,7 +56,7 @@
         console.debug("Formular wurde abgeschickt.");
 
         // Speichern
-        ["server", "port", "user", "ssl"].forEach((id) => {
+        ["server", "port", "user", "ssl", "pass"].forEach((id) => {
           localStorage.setItem(id, document.getElementById(id).value);
           console.debug(
             `[LocalStorage] Feld "${id}" mit Wert "${
@@ -88,7 +88,8 @@
           const json = await res.json();
           console.debug("JSON-Antwort:", json);
 
-          output.textContent = JSON.stringify(json, null, 2);
+          localStorage.setItem("imapTreeData", JSON.stringify(json)); // Daten speichern
+          window.location.href = "tree.html"; // Weiterleitung zur Visualisierung
         } catch (err) {
           console.error("Fehler beim Abrufen der IMAP-Daten:", err);
           output.textContent = "Fehler: " + err;

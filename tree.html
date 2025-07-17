@@ -47,9 +47,12 @@
       return `${bytes.toFixed(1)} ${units[i]}`;
     };
 
-    fetch('imap-scan.php')
-      .then(res => res.json())
-      .then(data => drawTreemap(data));
+    const data = JSON.parse(localStorage.getItem("imapTreeData"));
+    if (data) {
+      drawTreemap(data);
+    } else {
+      document.getElementById("info").innerText = "Keine Daten gefunden. Bitte zuerst analysieren!";
+    }
 
     function drawTreemap(data) {
       const width = document.getElementById("chart").clientWidth;
@@ -84,4 +87,11 @@
         .on("click", (event, d) => {
           document.getElementById("info").innerHTML = `
             <strong>Ordner:</strong> ${d.data.name}<br>
-            <strong>Größe:</strong> ${formatSize(d.data.size || 0)
+            <strong>Größe:</strong> ${formatSize(d.data.size || 0)}<br>
+            <strong>Pfad:</strong> ${d.data.path || ''}
+          `;
+        });
+    }
+  </script>
+</body>
+</html>
