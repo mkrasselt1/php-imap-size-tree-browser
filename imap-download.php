@@ -1,4 +1,10 @@
 <?php
+set_time_limit(300);
+ini_set('max_execution_time', 300);
+ini_set('memory_limit', '512M');
+
+header('Content-Type: application/json');
+
 $server   = $_POST['server'] ?? '';
 $port     = $_POST['port'] ?? '993';
 $user     = $_POST['user'] ?? '';
@@ -9,21 +15,19 @@ $uid      = $_POST['uid'] ?? '';
 $partNum  = $_POST['partNum'] ?? '';
 $filename = $_POST['filename'] ?? 'attachment.bin';
 
-if (!$server || !$user || !$pass || !$folder || !$uid || !$partNum) {
+if (!$server || !$user || !$pass || !$folder || !$uid) {
     http_response_code(400);
-    echo "Fehlende Parameter";
+    echo json_encode(['error' => 'Fehlende Parameter']);
     exit;
 }
 
 $mailbox = "{" . $server . ":" . $port . ($ssl ? "/ssl" : "") . "}";
-$inbox = @imap_open($mailbox, $user, $pass);
+$inbox = @imap_open($folder, $user, $pass);
 if (!$inbox) {
-    http_response_code(500);
-    echo "IMAP-Verbindung fehlgeschlagen";
+    echo json_encode(['error' => 'IMAP-Verbindung fehlgeschlagen', 'details' => imap_last_error()]);
     exit;
 }
 
-@imap_reopen($inbox, $folder);
 $structure = imap_fetchstructure($inbox, $uid, FT_UID);
 $part = $structure->parts[$partNum - 1] ?? null;
 if (!$part) {
