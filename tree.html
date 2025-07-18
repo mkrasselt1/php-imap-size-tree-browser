@@ -411,10 +411,10 @@ popup.innerHTML += `<form id="downloadForm${att.uid}" action="imap-download.php"
                   <input type="hidden" name="pass" value="${localStorage.getItem("pass")}" />
                   <input type="hidden" name="ssl" value="${localStorage.getItem("ssl")}" />
                   <input type="hidden" name="folder" value="${att.folder}" />
-                  <input type="hidden" name="uid" value="${att.uid}" />
+                  <input type="hidden" name="uid" value="${mail.uid}" />
                   <input type="hidden" name="partNum" value="${att.partNum}" />
                   <input type="hidden" name="filename" value="${att.filename}" />
-                  <button type="submit">${att.filename} (${att.size || "?"} Bytes) herunterladen</button>
+                  <button type="submit">${att.filename} (${formatSize(att.size) || "?"}) herunterladen</button>
                 </form>
                 <br>
               `;
