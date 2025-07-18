@@ -12,6 +12,9 @@
       <div class="header">
         <h1>📧 IMAP Speicher-Analyse</h1>
         <p>Analysieren Sie Ihren E-Mail-Speicher visuell und interaktiv</p>
+        <button class="btn btn-outline-light" onclick="showHelp()" style="margin-top: 1rem;" title="Hilfe & Anleitung (Strg+H)">
+          📖 Hilfe & Anleitung
+        </button>
       </div>
 
       <!-- Login Form -->
@@ -46,6 +49,23 @@
               <label for="ssl">SSL-Verschlüsselung verwenden</label>
             </div>
           </div>
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="demo" name="demo" />
+              <label for="demo">🎯 Demo-Modus (Beispieldaten verwenden)</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>📧 Schnellauswahl (Häufige Anbieter)</label>
+            <div class="preset-buttons">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="setPreset('gmail')">Gmail</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="setPreset('outlook')">Outlook/Hotmail</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="setPreset('yahoo')">Yahoo Mail</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="setPreset('icloud')">iCloud</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="setPreset('web.de')">Web.de</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="setPreset('gmx')">GMX</button>
+            </div>
+          </div>
           <button type="submit" class="btn btn-primary">
             🔍 Analyse starten
           </button>
@@ -74,9 +94,14 @@
           <div class="breadcrumb" id="breadcrumb">
             <!-- Breadcrumb wird dynamisch gefüllt -->
           </div>
-          <button class="btn btn-secondary" onclick="showLogin()">
-            🔄 Neue Analyse
-          </button>
+          <div class="header-buttons">
+            <button class="btn btn-warning" onclick="showExtendedScanOptions()" title="Erweiterte Analyse für große Ordner (Strg+E)">
+              🔍 Erweiterte Analyse
+            </button>
+            <button class="btn btn-secondary" onclick="showLogin()" title="Neue Analyse starten (Strg+R)">
+              🔄 Neue Analyse
+            </button>
+          </div>
         </div>
         <div class="stats-grid" id="statsGrid">
           <!-- Statistiken werden dynamisch gefüllt -->
@@ -93,6 +118,55 @@
           <h3>ℹ️ Informationen</h3>
           <p>Klicken Sie auf ein Element, um Details anzuzeigen</p>
         </div>
+      </div>
+
+      <!-- Help Section -->
+      <div id="helpSection" class="card" style="display: none;">
+        <h2 style="margin-bottom: 1.5rem; color: var(--primary-color);">
+          📖 Hilfe und Anleitung
+        </h2>
+        <div class="help-content">
+          <h3>🚀 Erste Schritte</h3>
+          <ol>
+            <li><strong>IMAP-Daten eingeben:</strong> Geben Sie Ihre IMAP-Server-Daten (Server, Port, Benutzername, Passwort) ein</li>
+            <li><strong>Analyse starten:</strong> Klicken Sie auf "Analyse starten" um den Scan zu beginnen</li>
+            <li><strong>Scan-Typ wählen:</strong> Für große Postfächer wird der progressive Scan empfohlen</li>
+            <li><strong>Ergebnisse erkunden:</strong> Navigieren Sie durch die Treemap-Visualisierung</li>
+          </ol>
+          
+          <h3>🔍 Funktionen</h3>
+          <ul>
+            <li><strong>Treemap-Visualisierung:</strong> Zeigt Ordner und E-Mails proportional zu ihrer Größe an</li>
+            <li><strong>Progressiver Scan:</strong> Für große Postfächer mit schrittweiser Verarbeitung</li>
+            <li><strong>Erweiterte Analyse:</strong> Vollständige Analyse für große Ordner (über 1000 E-Mails)</li>
+            <li><strong>Navigation:</strong> Klicken Sie auf Ordner um hineinzunavigieren</li>
+            <li><strong>E-Mail-Details:</strong> Klicken Sie auf E-Mails um Details anzuzeigen</li>
+          </ul>
+          
+          <h3>⚙️ Scan-Optionen</h3>
+          <ul>
+            <li><strong>Normaler Scan:</strong> Schnell, aber bei großen Postfächern evtl. langsam</li>
+            <li><strong>Progressiver Scan:</strong> Schrittweise Verarbeitung mit Fortschrittsanzeige</li>
+            <li><strong>Erweiterte Analyse:</strong> Vollständige Analyse auch für sehr große Ordner</li>
+          </ul>
+          
+          <h3>🔒 Sicherheit</h3>
+          <ul>
+            <li>Alle Daten werden nur lokal verarbeitet</li>
+            <li>Ihre Login-Daten werden nicht gespeichert</li>
+            <li>Die Analyse erfolgt direkt über IMAP</li>
+          </ul>
+          
+          <h3>⌨️ Tastaturkürzel</h3>
+          <ul>
+            <li><strong>Strg/Cmd + H:</strong> Hilfe anzeigen</li>
+            <li><strong>Strg/Cmd + R:</strong> Neue Analyse starten</li>
+            <li><strong>Strg/Cmd + E:</strong> Erweiterte Analyse</li>
+            <li><strong>Escape:</strong> Modals schließen oder zurück</li>
+            <li><strong>Backspace:</strong> Zurück in der Navigation</li>
+          </ul>
+        </div>
+        <button class="btn btn-secondary" onclick="hideHelp()">❌ Schließen</button>
       </div>
     </div>
 

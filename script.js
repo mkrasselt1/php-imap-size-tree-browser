@@ -116,6 +116,25 @@ async function handleFormSubmit(e) {
   const formData = new FormData(e.target);
   
   try {
+    // Check if demo mode is enabled
+    const isDemoMode = document.getElementById('demo').checked;
+    
+    if (isDemoMode) {
+      // Use demo data
+      updateLoadingText('Demo-Daten werden geladen...');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate loading
+      
+      imapData = demoData;
+      currentData = imapData;
+      localStorage.setItem('imapTreeData', JSON.stringify(imapData));
+      
+      updateLoadingText('Demo-Daten erfolgreich geladen!');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      showVisualization();
+      return;
+    }
+    
     // Entscheidung zwischen normalem und progressivem Scan
     const useProgressiveScan = confirm(
       'Ihr Postfach wird analysiert.\n\n' +
@@ -507,6 +526,20 @@ function handleSidebarItemClick(item) {
     selectedUid = item.name;
     highlightSelectedItem();
     showItemInfo(item);
+    
+    // Automatisch erweiteten Scan anbieten für Warnungen
+    if (item.warning && item.folderFull) {
+      setTimeout(() => {
+        const shouldScan = confirm(
+          `Dieser Ordner enthält ${item.count} nicht gescannte E-Mails.\n\n` +
+          `Möchten Sie eine vollständige Analyse starten?\n\n` +
+          `⚠️ Hinweis: Dies kann bei sehr großen Ordnern einige Minuten dauern.`
+        );
+        if (shouldScan) {
+          extendedScanFolder(item.folderFull);
+        }
+      }, 500);
+    }
   } else if (item.children) {
     history.push(currentData);
     currentData = item;
@@ -514,11 +547,36 @@ function handleSidebarItemClick(item) {
   }
 }
 
+// Treemap rendering cache
+let treemapCache = new Map();
+let lastRenderData = null;
+
 function renderTreemap() {
   const container = document.getElementById('chartContainer');
-  container.innerHTML = '';
   
-  if (!currentData || !currentData.children) return;
+  if (!currentData || !currentData.children) {
+    container.innerHTML = '';
+    return;
+  }
+  
+  // Check if we can use cached rendering
+  const dataKey = JSON.stringify(currentData);
+  const containerSize = `${container.clientWidth}x${container.clientHeight}`;
+  const cacheKey = `${dataKey}-${containerSize}`;
+  
+  if (treemapCache.has(cacheKey) && lastRenderData === dataKey) {
+    // Use cached version
+    container.innerHTML = treemapCache.get(cacheKey);
+    reattachTreemapEventListeners();
+    return;
+  }
+  
+  // Clear container and cache if data changed
+  container.innerHTML = '';
+  if (lastRenderData !== dataKey) {
+    treemapCache.clear();
+    lastRenderData = dataKey;
+  }
   
   const width = container.clientWidth;
   const height = container.clientHeight;
@@ -708,6 +766,13 @@ function renderTreemap() {
       return `${icon} ${d.data.name}\nGröße: ${formatSize(d.data.size || 0)}`;
     });
   
+  attachTreemapEventListeners(nodes);
+  
+  // Cache the rendered content
+  treemapCache.set(cacheKey, container.innerHTML);
+}
+
+function attachTreemapEventListeners(nodes) {
   nodes.on('click', (event, d) => {
     selectedUid = d.data.uid || d.data.name;
     highlightSelectedItem();
@@ -715,10 +780,49 @@ function renderTreemap() {
     
     if (d.data.type === 'mail') {
       showMailModal(d.data);
+    } else if (d.data.type === 'other-mails' && d.data.warning && d.data.folderFull) {
+      // Automatisch erweiterten Scan anbieten für Warnungen
+      setTimeout(() => {
+        const shouldScan = confirm(
+          `Dieser Ordner enthält ${d.data.count} nicht gescannte E-Mails.\n\n` +
+          `Möchten Sie eine vollständige Analyse starten?\n\n` +
+          `⚠️ Hinweis: Dies kann bei sehr großen Ordnern einige Minuten dauern.`
+        );
+        if (shouldScan) {
+          extendedScanFolder(d.data.folderFull);
+        }
+      }, 500);
     }
   });
 }
 
+function reattachTreemapEventListeners() {
+  // Reattach event listeners for cached content
+  const container = document.getElementById('chartContainer');
+  const nodes = d3.select(container).selectAll('.node');
+  
+  nodes.on('click', (event, d) => {
+    // Extract data from DOM element
+    const title = d3.select(event.target.parentNode).select('title').text();
+    const matches = title.match(/^([📧📦📁])\s(.+)\nGröße:\s(.+)$/);
+    
+    if (matches) {
+      const [, icon, name, size] = matches;
+      const data = {
+        name: name,
+        size: size,
+        type: icon === '📧' ? 'mail' : icon === '📦' ? 'other-mails' : 'folder'
+      };
+      
+      selectedUid = data.name;
+      highlightSelectedItem();
+      showItemInfo(data);
+    }
+  });
+}
+
+// Remove the old renderTreemap function since we've replaced it above
+// function renderTreemap() {
 function shadeColor(color, percent) {
   const f = parseInt(color.slice(1), 16);
   const t = percent < 0 ? 0 : 255;
@@ -1117,12 +1221,139 @@ async function refreshDataAfterDelete() {
   }
 }
 
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && currentModal) {
-    closeModal();
+// Demo data for testing
+const demoData = {
+  name: 'INBOX',
+  type: 'folder',
+  size: 52428800, // 50MB
+  children: [
+    {
+      name: 'INBOX',
+      type: 'folder',
+      size: 20971520, // 20MB
+      children: [
+        {
+          name: 'Re: Projektbesprechung nächste Woche',
+          type: 'mail',
+          size: 2097152, // 2MB
+          uid: 'demo-1',
+          from: 'kollege@firma.de',
+          subject: 'Re: Projektbesprechung nächste Woche',
+          date: new Date('2025-07-15').toISOString()
+        },
+        {
+          name: 'Newsletter: Neue Features verfügbar',
+          type: 'mail',
+          size: 1048576, // 1MB
+          uid: 'demo-2',
+          from: 'news@service.com',
+          subject: 'Newsletter: Neue Features verfügbar',
+          date: new Date('2025-07-14').toISOString()
+        },
+        {
+          name: 'Urlaubsantrag genehmigt',
+          type: 'mail',
+          size: 512000, // 500KB
+          uid: 'demo-3',
+          from: 'hr@firma.de',
+          subject: 'Urlaubsantrag genehmigt',
+          date: new Date('2025-07-13').toISOString()
+        }
+      ]
+    },
+    {
+      name: 'Sent',
+      type: 'folder',
+      size: 15728640, // 15MB
+      children: [
+        {
+          name: 'Projektbesprechung nächste Woche',
+          type: 'mail',
+          size: 1048576, // 1MB
+          uid: 'demo-4',
+          from: 'user@firma.de',
+          subject: 'Projektbesprechung nächste Woche',
+          date: new Date('2025-07-12').toISOString()
+        },
+        {
+          name: 'Fwd: Wichtige Dokumentation',
+          type: 'mail',
+          size: 5242880, // 5MB
+          uid: 'demo-5',
+          from: 'user@firma.de',
+          subject: 'Fwd: Wichtige Dokumentation',
+          date: new Date('2025-07-11').toISOString()
+        }
+      ]
+    },
+    {
+      name: 'Trash',
+      type: 'folder',
+      size: 15728640, // 15MB
+      children: [
+        {
+          name: 'Alte Rechnungen',
+          type: 'mail',
+          size: 3145728, // 3MB
+          uid: 'demo-6',
+          from: 'billing@service.com',
+          subject: 'Alte Rechnungen',
+          date: new Date('2025-06-01').toISOString()
+        },
+        {
+          name: 'Spam-Nachricht',
+          type: 'mail',
+          size: 102400, // 100KB
+          uid: 'demo-7',
+          from: 'spam@spammer.com',
+          subject: 'Spam-Nachricht',
+          date: new Date('2025-06-01').toISOString()
+        },
+        {
+          name: 'Nicht gescannte E-Mails',
+          type: 'other-mails',
+          size: 12480512, // 12MB
+          count: 850,
+          warning: true,
+          folderFull: 'Trash'
+        }
+      ]
+    }
+  ]
+};
+
+async function handleFormSubmit(e) {
+  e.preventDefault();
+  
+  // Teste mit Demo-Daten
+  currentData = demoData;
+  imapData = demoData;
+  showVisualization();
+  
+  /*
+  saveFormData();
+  showLoading();
+
+  const formData = new FormData(e.target);
+  
+  try {
+    // Entscheidung zwischen normalem und progressivem Scan
+    const useProgressiveScan = confirm(
+      'Ihr Postfach wird analysiert.\n\n' +
+      'Für große Postfächer (>5GB) empfehlen wir den progressiven Scan.\n\n' +
+      'Klicken Sie "OK" für progressiven Scan oder "Abbrechen" für normalen Scan.'
+    );
+
+    if (useProgressiveScan) {
+      await handleProgressiveScan(formData);
+    } else {
+      await handleNormalScan(formData);
+    }
+    
+  } catch (error) {
+    console.error('Fehler beim Laden der IMAP-Daten:', error);
+    showError('Verbindung fehlgeschlagen: ' + error.message);
+    showLogin();
   }
-  if (e.key === 'Backspace' && history.length > 0 && !currentModal) {
-    navigateBack();
-  }
-});
+  */
+}
