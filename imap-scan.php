@@ -60,12 +60,13 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
     for ($i = 1; $i <= $numMessages; $i++) {
         $overview = imap_fetch_overview($inbox, $i);
         if ($overview && isset($overview[0]->size)) {
+            $uid = imap_uid($inbox, $i);
             $mail = [
                 'name' => imap_utf8($overview[0]->subject ?? '(kein Betreff)'),
                 'from' => $overview[0]->from ?? '',
                 'date' => $overview[0]->date ?? '',
                 'size' => $overview[0]->size,
-                'uid' => $overview[0]->uid ?? $i,
+                'uid' => $uid,
                 'folder' => $folderFull,
                 'type' => 'mail'
             ];
