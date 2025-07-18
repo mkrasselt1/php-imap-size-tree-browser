@@ -339,7 +339,7 @@
         //it needs to be removed to get the folder name
         const folder =
           (mail.folderFull ? mail.folderFull.replace(/{.*?}/, "").trim() : undefined) ||
-          (mail.mail && mail.mail.folder ? mail.mail.folder.replace(/{.*?}/, "").trim() : undefined) ||
+          (mail.folder ? mail.folder.replace(/{.*?}/, "").trim() : undefined) ||
           ""; // ggf. anpassen!
         
         // {mail.krasm.de:993/ssl}INBOX.Korrespondenz.Privat
