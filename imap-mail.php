@@ -27,7 +27,8 @@ imap_timeout(IMAP_READTIMEOUT, 10);
 imap_timeout(IMAP_WRITETIMEOUT, 10);
 imap_timeout(IMAP_CLOSETIMEOUT, 10);
 
-$inbox = @imap_open($folder, $user, $pass);
+// Zuerst zur Mailbox verbinden, dann zum spezifischen Ordner wechseln
+$inbox = @imap_open($mailbox, $user, $pass);
 if (!$inbox) {
     $error = imap_last_error();
     echo json_encode([
@@ -40,13 +41,32 @@ if (!$inbox) {
     exit;
 }
 
+// Zum spezifischen Ordner wechseln
+$reopened = @imap_reopen($inbox, $folder);
+if (!$reopened) {
+    echo json_encode([
+        'error' => 'Ordner nicht gefunden',
+        'details' => 'Der angegebene Ordner konnte nicht geöffnet werden: ' . $folder,
+        'folder' => $folder
+    ]);
+    imap_close($inbox);
+    exit;
+}
+
 // Header holen
 $header = imap_headerinfo($inbox, $uid, FT_UID);
 if (!$header) {
+    // Zusätzliche Debug-Informationen
+    $check = imap_check($inbox);
+    $folderStatus = $check ? "Ordner: {$check->Mailbox}, Mails: {$check->Nmsgs}" : "Ordner-Status unbekannt";
+    
     echo json_encode([
         'error' => 'E-Mail nicht gefunden',
         'details' => 'Die angegebene UID existiert nicht oder ist ungültig',
-        'uid' => $uid
+        'uid' => $uid,
+        'folder' => $folder,
+        'folderStatus' => $folderStatus,
+        'imapError' => imap_last_error()
     ]);
     imap_close($inbox);
     exit;
