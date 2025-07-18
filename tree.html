@@ -337,8 +337,10 @@
         const ssl = localStorage.getItem("ssl");
         //mail.folder contains the servername and port in curly braces, e.g. "{imap.example.com:993/imap/ssl}"
         //it needs to be removed to get the folder name
-        const folder = mail.folderFull.replace(/{.*?}/, "").trim() || 
-                        mail.mail.folder.replace(/{.*?}/, "").trim() || ""; // ggf. anpassen!
+        const folder =
+          (mail.folderFull ? mail.folderFull.replace(/{.*?}/, "").trim() : "") ||
+          (mail.mail && mail.mail.folder ? mail.mail.folder.replace(/{.*?}/, "").trim() : "") ||
+          ""; // ggf. anpassen!
         
         // {mail.krasm.de:993/ssl}INBOX.Korrespondenz.Privat
         const uid = mail.uid;
