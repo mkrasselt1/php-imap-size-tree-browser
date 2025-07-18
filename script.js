@@ -703,20 +703,53 @@ function renderTreemap() {
     .sum(d => d.size || 0)
     .sort((a, b) => b.value - a.value);
   
-  // Wähle Tiling-Algorithmus basierend auf Anzahl der Elemente
+  // Calculate responsive thresholds based on container size
+  const containerArea = width * height;
+  const avgItemSize = containerArea / leafCount;
+  
+  // Calculate dynamic thresholds based on available space
+  // Minimum size for readable items: smaller containers need fewer items per algorithm
+  const minReadableArea = 100 * 50; // 5000 px²
+  const containerSizeFactor = Math.min(1.5, Math.max(0.5, containerArea / 500000)); // Scale factor based on container size
+  
+  // Dynamic thresholds with container size consideration
+  const baseSliceDiceThreshold = 8;
+  const baseSquarifyThreshold = 40;
+  
+  const optimalItemsForSliceDice = Math.floor(baseSliceDiceThreshold * containerSizeFactor);
+  const optimalItemsForSquarify = Math.floor(baseSquarifyThreshold * containerSizeFactor);
+  
+  // Ensure reasonable bounds with smoother transitions
+  const minSliceDiceThreshold = Math.max(3, Math.min(20, optimalItemsForSliceDice));
+  const minSquarifyThreshold = Math.max(minSliceDiceThreshold + 5, Math.min(150, optimalItemsForSquarify));
+  
+  // Wähle Tiling-Algorithmus basierend auf Anzahl der Elemente und verfügbarem Platz
   const leafCount = root.leaves().length;
   let tileMethod;
   
-  if (leafCount <= 10) {
-    // Wenige Elemente: Slice-and-Dice für nebeneinander
+  if (leafCount <= minSliceDiceThreshold) {
+    // Wenige Elemente: Slice-and-Dice für nebeneinander (optimal für wenige Items)
     tileMethod = d3.treemapSliceDice;
-  } else if (leafCount <= 50) {
-    // Mittlere Anzahl: Squarify mit ausgewogenem Ratio
-    tileMethod = d3.treemapSquarify.ratio(1.5);
+  } else if (leafCount <= minSquarifyThreshold) {
+    // Mittlere Anzahl: Squarify mit dynamischem Ratio basierend auf Container-Größe
+    const ratio = Math.max(1.0, Math.min(2.0, 1.5 * containerSizeFactor));
+    tileMethod = d3.treemapSquarify.ratio(ratio);
   } else {
-    // Viele Elemente: Binäre Aufteilung
+    // Viele Elemente: Binäre Aufteilung für beste Platzausnutzung
     tileMethod = d3.treemapBinary;
   }
+  
+  // Debug information for responsive thresholds
+  const selectedMethodName = tileMethod === d3.treemapSliceDice ? 'Slice-and-Dice' : 
+                             tileMethod === d3.treemapSquarify ? 'Squarify' : 'Binary';
+  
+  console.log(`Container: ${width}x${height} (${containerArea.toLocaleString()} px²)`);
+  console.log(`Items: ${leafCount}, Avg size: ${Math.round(avgItemSize)} px²`);
+  console.log(`Thresholds: Slice-dice ≤${minSliceDiceThreshold}, Squarify ≤${minSquarifyThreshold}`);
+  console.log(`Selected method: ${selectedMethodName}`);
+  
+  // Update responsive info in UI (development mode only)
+  updateResponsiveInfo(width, height, leafCount, selectedMethodName);
   
   d3.treemap()
     .size([width, height])
@@ -1054,6 +1087,36 @@ function navigateBack() {
 function handleResize() {
   if (document.getElementById('visualizationSection').classList.contains('active')) {
     renderTreemap();
+  }
+}
+
+// Add responsive algorithm info to the stats grid
+function updateResponsiveInfo(width, height, leafCount, selectedMethod) {
+  const containerArea = width * height;
+  const avgItemSize = containerArea / leafCount;
+  
+  // Add responsive info to stats if in development mode
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    const responsiveInfo = document.createElement('div');
+    responsiveInfo.className = 'stat-item responsive-info';
+    responsiveInfo.innerHTML = `
+      <h4>📐 Layout-Algorithmus</h4>
+      <p><strong>${selectedMethod}</strong></p>
+      <p class="stat-detail">
+        ${leafCount} Elemente auf ${Math.round(containerArea/1000)}k px²<br>
+        ⌀ ${Math.round(avgItemSize)} px² pro Element
+      </p>
+    `;
+    
+    // Remove existing responsive info
+    const existing = document.querySelector('.responsive-info');
+    if (existing) existing.remove();
+    
+    // Add to stats grid
+    const statsGrid = document.getElementById('statsGrid');
+    if (statsGrid) {
+      statsGrid.appendChild(responsiveInfo);
+    }
   }
 }
 

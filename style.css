@@ -786,6 +786,24 @@ justify-content: center;
   transform: translateY(-1px);
 }
 
+/* Responsive Algorithm Info */
+.responsive-info {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+
+.responsive-info h4 {
+  color: white;
+  margin-bottom: 0.5rem;
+}
+
+.responsive-info .stat-detail {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  line-height: 1.3;
+}
+
 /* Extended Scan Modal */
 .folder-scan-list {
   max-height: 400px;
