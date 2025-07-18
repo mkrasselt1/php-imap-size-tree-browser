@@ -9,7 +9,7 @@ $server   = $_POST['server'] ?? '';
 $port     = $_POST['port'] ?? '993';
 $user     = $_POST['user'] ?? '';
 $pass     = $_POST['pass'] ?? '';
-$ssl      = ($_POST['ssl'] ?? 'false') === 'true';
+$ssl = in_array(strtolower($_POST['ssl'] ?? 'false'), ['true', 'on'], true);
 $folder   = $_POST['folder'] ?? '';
 $uid      = $_POST['uid'] ?? '';
 $partNum  = $_POST['partNum'] ?? '';

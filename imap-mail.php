@@ -9,7 +9,7 @@ $server = $_POST['server'] ?? '';
 $port   = $_POST['port'] ?? '993';
 $user   = $_POST['user'] ?? '';
 $pass   = $_POST['pass'] ?? '';
-$ssl    = ($_POST['ssl'] ?? 'false') === 'true';
+$ssl = in_array(strtolower($_POST['ssl'] ?? 'false'), ['true', 'on'], true);
 $folder = $_POST['folder'] ?? '';
 $uid    = $_POST['uid'] ?? '';
 
@@ -44,20 +44,19 @@ $attachments = [];
 
 if (isset($structure->parts) && count($structure->parts)) {
     // Recursive function to extract text/html from all levels
-    function getBodies($inbox, $uid, $parts, $prefix = '') {
+    function getBodies($inbox, $uid, $parts, $prefix = '')
+    {
         $result = ['text' => '', 'html' => ''];
         foreach ($parts as $i => $part) {
             $partNum = $prefix . ($i + 1);
             if ($part->type == 0 && strtolower($part->subtype) == 'plain') {
                 $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
-                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) :
-                               ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
+                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
                 $result['text'] .= $bodyDecoded;
             }
             if ($part->type == 0 && strtolower($part->subtype) == 'html') {
                 $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
-                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) :
-                               ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
+                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
                 $result['html'] .= $bodyDecoded;
             }
             // If multipart, recurse
@@ -108,12 +107,10 @@ if (isset($structure->parts) && count($structure->parts)) {
     // Singlepart-Mail wie gehabt
     $body = imap_body($inbox, $uid, FT_UID);
     if ($structure->type == 0 && strtolower($structure->subtype) == 'plain') {
-        $textBody = ($structure->encoding == 3) ? base64_decode($body) :
-                    ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
+        $textBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
     }
     if ($structure->type == 0 && strtolower($structure->subtype) == 'html') {
-        $htmlBody = ($structure->encoding == 3) ? base64_decode($body) :
-                    ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
+        $htmlBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
     }
 }
 

@@ -9,7 +9,7 @@ $server = $_POST['server'] ?? '';
 $port   = $_POST['port'] ?? '993';
 $user   = $_POST['user'] ?? '';
 $pass   = $_POST['pass'] ?? '';
-$ssl    = ($_POST['ssl'] ?? 'false') === 'true';
+$ssl = in_array(strtolower($_POST['ssl'] ?? 'false'), ['true', 'on'], true);
 
 if (!$server || !$user || !$pass) {
     http_response_code(400);
