@@ -5,6 +5,27 @@ ini_set('memory_limit', '512M');
 
 header('Content-Type: application/json');
 
+// Hilfsfunktion für robuste UTF-8 Dekodierung
+function safe_imap_utf8($text) {
+    if (empty($text)) return $text;
+    
+    $decoded = @imap_utf8($text);
+    if ($decoded !== false && !empty(trim($decoded))) {
+        return $decoded;
+    }
+    
+    // Fallback: Versuche manuelle Dekodierung
+    if (function_exists('mb_decode_mimeheader')) {
+        $decoded = @mb_decode_mimeheader($text);
+        if ($decoded !== false && !empty(trim($decoded))) {
+            return $decoded;
+        }
+    }
+    
+    // Letzte Hoffnung: Original-Text zurückgeben
+    return $text;
+}
+
 $server = $_POST['server'] ?? '';
 $port   = $_POST['port'] ?? '993';
 $user   = $_POST['user'] ?? '';
@@ -75,25 +96,25 @@ if (!$header) {
 // Absender und Empfänger extrahieren
 $from = '';
 if (isset($header->fromaddress)) {
-    $from = imap_utf8($header->fromaddress);
+    $from = safe_imap_utf8($header->fromaddress);
 } elseif (isset($header->from)) {
-    $from = imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
+    $from = safe_imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
 }
 
 $to = '';
 if (isset($header->toaddress)) {
-    $to = imap_utf8($header->toaddress);
+    $to = safe_imap_utf8($header->toaddress);
 } elseif (isset($header->to)) {
-    $to = imap_utf8($header->to[0]->mailbox . '@' . $header->to[0]->host);
+    $to = safe_imap_utf8($header->to[0]->mailbox . '@' . $header->to[0]->host);
 }
 
 // Subject - robuste Behandlung
 $subject = '';
 if (isset($header->subject)) {
-    $subject = imap_utf8($header->subject);
+    $subject = safe_imap_utf8($header->subject);
     // Zusätzliche Bereinigung für kaputte Encoding
     if (!$subject || trim($subject) === '') {
-        $subject = isset($header->Subject) ? imap_utf8($header->Subject) : '';
+        $subject = isset($header->Subject) ? safe_imap_utf8($header->Subject) : '';
     }
 }
 if (!$subject) {

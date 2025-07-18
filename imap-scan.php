@@ -5,6 +5,27 @@ ini_set('memory_limit', '512M');
 
 header('Content-Type: application/json');
 
+// Hilfsfunktion für robuste UTF-8 Dekodierung
+function safe_imap_utf8($text) {
+    if (empty($text)) return $text;
+    
+    $decoded = @imap_utf8($text);
+    if ($decoded !== false && !empty(trim($decoded))) {
+        return $decoded;
+    }
+    
+    // Fallback: Versuche manuelle Dekodierung
+    if (function_exists('mb_decode_mimeheader')) {
+        $decoded = @mb_decode_mimeheader($text);
+        if ($decoded !== false && !empty(trim($decoded))) {
+            return $decoded;
+        }
+    }
+    
+    // Letzte Hoffnung: Original-Text zurückgeben
+    return $text;
+}
+
 $server = $_POST['server'] ?? '';
 $port   = $_POST['port'] ?? '993';
 $user   = $_POST['user'] ?? '';
@@ -43,6 +64,9 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         $parts = explode($delimiter, $shortName);
         $shortName = end($parts);
     }
+    
+    // Ordnername korrekt dekodieren für Umlaute
+    $shortName = safe_imap_utf8($shortName);
 
     // Ordner öffnen
     $box = @imap_reopen($inbox, $folderFull);
@@ -61,7 +85,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         $overview = imap_fetch_overview($inbox, $i);
         if ($overview && isset($overview[0]->size)) {
             $mail = [
-                'name' => imap_utf8($overview[0]->subject ?? '(kein Betreff)'),
+                'name' => safe_imap_utf8($overview[0]->subject ?? '(kein Betreff)'),
                 'from' => $overview[0]->from ?? '',
                 'date' => $overview[0]->date ?? '',
                 'size' => $overview[0]->size,

@@ -5,6 +5,27 @@ ini_set('memory_limit', '256M');
 
 header('Content-Type: application/json');
 
+// Hilfsfunktion für robuste UTF-8 Dekodierung
+function safe_imap_utf8($text) {
+    if (empty($text)) return $text;
+    
+    $decoded = @imap_utf8($text);
+    if ($decoded !== false && !empty(trim($decoded))) {
+        return $decoded;
+    }
+    
+    // Fallback: Versuche manuelle Dekodierung
+    if (function_exists('mb_decode_mimeheader')) {
+        $decoded = @mb_decode_mimeheader($text);
+        if ($decoded !== false && !empty(trim($decoded))) {
+            return $decoded;
+        }
+    }
+    
+    // Letzte Hoffnung: Original-Text zurückgeben
+    return $text;
+}
+
 $server = $_POST['server'] ?? '';
 $port   = $_POST['port'] ?? '993';
 $user   = $_POST['user'] ?? '';
@@ -71,12 +92,14 @@ if ($action === 'init') {
         'totalFolders' => count($folders),
         'folders' => array_map(function($folder) use ($mailbox) {
             $shortName = str_replace($mailbox, '', $folder);
+            // Ordnername korrekt dekodieren für Umlaute
+            $shortName = safe_imap_utf8($shortName);
             return [
                 'full' => $folder,
                 'name' => $shortName
             ];
         }, $folders)
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
     
 } elseif ($action === 'scan') {
     // Schritt 2: Einzelnen Ordner scannen
@@ -115,7 +138,7 @@ if ($action === 'init') {
             'total' => $cacheData['totalFolders'],
             'percent' => round(($cacheData['scannedFolders'] / $cacheData['totalFolders']) * 100, 1)
         ]
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
     
 } elseif ($action === 'finalize') {
     // Schritt 3: Ergebnisse zusammenfassen
@@ -138,7 +161,7 @@ if ($action === 'init') {
     // Cache-Datei löschen
     unlink($cacheFile);
     
-    echo json_encode($tree);
+    echo json_encode($tree, JSON_UNESCAPED_UNICODE);
     
 } else {
     echo json_encode(['error' => 'Unbekannte Aktion']);
@@ -161,6 +184,9 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         $parts = explode($delimiter, $shortName);
         $shortName = end($parts);
     }
+    
+    // Ordnername korrekt dekodieren für Umlaute
+    $shortName = safe_imap_utf8($shortName);
 
     // Ordner öffnen
     $box = @imap_reopen($inbox, $folderFull);
@@ -191,6 +217,7 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
     $children = [];
     $totalSize = 0;
     $maxMails = 300; // Limite pro Ordner für Performance
+    $mails = []; // Array für alle Mails sammeln
 
     // Mails in Batches verarbeiten
     $numMsgs = min($check->Nmsgs, $maxMails);
@@ -206,56 +233,68 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         $uid = imap_uid($inbox, $i);
         if (!$uid) continue;
         
-        // Nur große Mails einzeln anzeigen (> 1MB)
-        if ($size > 1048576) {
-            // Sicherstellen, dass Subject richtig kodiert ist
-            $subject = '';
-            if (isset($header->subject)) {
-                $subject = imap_utf8($header->subject);
-                // Zusätzliche Bereinigung für kaputte Encoding
-                if (!$subject || trim($subject) === '') {
-                    $subject = isset($header->Subject) ? imap_utf8($header->Subject) : '';
-                }
+        // Sicherstellen, dass Subject richtig kodiert ist
+        $subject = '';
+        if (isset($header->subject)) {
+            $subject = safe_imap_utf8($header->subject);
+            // Zusätzliche Bereinigung für kaputte Encoding
+            if (!$subject || trim($subject) === '') {
+                $subject = isset($header->Subject) ? safe_imap_utf8($header->Subject) : '';
             }
-            
-            $from = '';
-            if (isset($header->fromaddress)) {
-                $from = imap_utf8($header->fromaddress);
-            } elseif (isset($header->from)) {
-                $from = imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
-            }
-            
-            $date = '';
-            if (isset($header->date)) {
-                $date = $header->date;
-            } elseif (isset($header->Date)) {
-                $date = $header->Date;
-            }
-            
-            $children[] = [
-                'name' => $subject ?: 'Kein Betreff',
-                'type' => 'mail',
-                'size' => $size,
-                'from' => $from,
-                'date' => $date,
-                'uid' => $uid,
-                'folderFull' => $folderFull,
-                'folder' => $shortName,
-                'messageNumber' => $i, // Für Debugging
-                'rawSubject' => $header->subject ?? '', // Für Debugging
-            ];
         }
+        
+        $from = '';
+        if (isset($header->fromaddress)) {
+            $from = safe_imap_utf8($header->fromaddress);
+        } elseif (isset($header->from)) {
+            $from = safe_imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
+        }
+        
+        $date = '';
+        if (isset($header->date)) {
+            $date = $header->date;
+        } elseif (isset($header->Date)) {
+            $date = $header->Date;
+        }
+        
+        // Alle Mails sammeln (wie im normalen Scan)
+        $mails[] = [
+            'name' => $subject ?: 'Kein Betreff',
+            'type' => 'mail',
+            'size' => $size,
+            'from' => $from,
+            'date' => $date,
+            'uid' => $uid,
+            'folderFull' => $folderFull,
+            'folder' => $shortName,
+            'messageNumber' => $i, // Für Debugging
+            'rawSubject' => $header->subject ?? '', // Für Debugging
+        ];
     }
     
-    // Kleine Mails zusammenfassen
-    $smallMailsCount = $numMsgs - count($children);
-    if ($smallMailsCount > 0) {
-        $smallMailsSize = $totalSize - array_sum(array_column($children, 'size'));
+    // Die 10 größten Mails als eigene Knoten (wie im normalen Scan)
+    usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
+    $biggestMails = array_slice($mails, 0, 10);
+    
+    // Restliche Mails zusammenfassen
+    $otherMails = array_slice($mails, 10);
+    $otherSize = 0;
+    foreach ($otherMails as $mail) {
+        $otherSize += $mail['size'];
+    }
+    
+    // Größte Mails als eigene Knoten hinzufügen
+    foreach ($biggestMails as $mail) {
+        $children[] = $mail;
+    }
+    
+    // Restliche Mails zusammenfassen
+    if ($otherSize > 0) {
         $children[] = [
-            'name' => "Weitere E-Mails ($smallMailsCount)",
+            'name' => "Weitere E-Mails (" . count($otherMails) . ")",
             'type' => 'other-mails',
-            'size' => $smallMailsSize,
-            'count' => $smallMailsCount,
+            'size' => $otherSize,
+            'count' => count($otherMails),
             'folderFull' => $folderFull,
             'folder' => $shortName
         ];

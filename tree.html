@@ -48,6 +48,57 @@
         max-height: 70vh;
         overflow-y: auto;
       }
+
+      /* Verbesserte Alert-Styles */
+      .alert {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        border: 2px solid transparent;
+        font-weight: 600;
+        font-size: 1.1rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        animation: slideInRight 0.3s ease-out;
+        max-width: 400px;
+      }
+
+      .alert-success {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        border-color: #28a745;
+        color: #155724;
+      }
+
+      .alert-success::before {
+        content: "✅ ";
+        font-size: 1.2rem;
+        margin-right: 0.5rem;
+      }
+
+      .alert-error {
+        background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+        border-color: #dc3545;
+        color: #721c24;
+      }
+
+      .alert-error::before {
+        content: "❌ ";
+        font-size: 1.2rem;
+        margin-right: 0.5rem;
+      }
+
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
     </style>
   </head>
   <body>
@@ -79,6 +130,26 @@
         }
         return `${bytes.toFixed(1)} ${units[i]}`;
       };
+
+      function showAlert(message, type = 'success') {
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type}`;
+        alert.textContent = message;
+        
+        document.body.appendChild(alert);
+        
+        setTimeout(() => {
+          alert.remove();
+        }, 5000);
+      }
+
+      function showSuccess(message) {
+        showAlert(message, 'success');
+      }
+
+      function showError(message) {
+        showAlert(message, 'error');
+      }
 
       const data = JSON.parse(localStorage.getItem("imapTreeData"));
       let history = [];
@@ -362,26 +433,32 @@
       }
 
       function showMailPopup(mail) {
-        fetchMailContent(mail).then((data) => {
-          popup = document.getElementById("mail-popup");
-          if (!popup) {
-            popup = document.createElement("div");
-            popup.id = "mail-popup";
-            popup.style.position = "fixed";
-            popup.style.left = "50%";
-            popup.style.top = "50%";
-            popup.style.transform = "translate(-50%, -50%)";
-            popup.style.background = "#fff";
-            popup.style.border = "2px solid #0077cc";
-            popup.style.borderRadius = "10px";
-            popup.style.boxShadow = "0 4px 16px rgba(0,0,0,0.2)";
-            popup.style.padding = "24px";
-            popup.style.zIndex = "9999";
-            popup.style.maxWidth = "420px";
-            popup.style.maxHeight = "70vh";
-            popup.style.overflowY = "auto";
-            document.body.appendChild(popup);
-          }
+        fetchMailContent(mail)
+          .then((data) => {
+            if (data.error) {
+              showError('Fehler beim Laden der E-Mail: ' + data.error);
+              return;
+            }
+            
+            popup = document.getElementById("mail-popup");
+            if (!popup) {
+              popup = document.createElement("div");
+              popup.id = "mail-popup";
+              popup.style.position = "fixed";
+              popup.style.left = "50%";
+              popup.style.top = "50%";
+              popup.style.transform = "translate(-50%, -50%)";
+              popup.style.background = "#fff";
+              popup.style.border = "2px solid #0077cc";
+              popup.style.borderRadius = "10px";
+              popup.style.boxShadow = "0 4px 16px rgba(0,0,0,0.2)";
+              popup.style.padding = "24px";
+              popup.style.zIndex = "9999";
+              popup.style.maxWidth = "420px";
+              popup.style.maxHeight = "70vh";
+              popup.style.overflowY = "auto";
+              document.body.appendChild(popup);
+            }
           popup.innerHTML = `
             <h2>📧 ${data.subject}</h2>
             <div><strong>Von:</strong> ${data.from}</div>
@@ -460,30 +537,47 @@
             e
           ) {
             e.preventDefault();
+            
+            if (!confirm('Möchten Sie diese E-Mail wirklich löschen?')) {
+              return;
+            }
+            
             const formData = new FormData(e.target);
-            const res = await fetch("imap-delete.php", {
-              method: "POST",
-              body: formData,
-            });
-            const json = await res.json();
-            if (json.success) {
-              popup.innerHTML = "<b>Mail gelöscht!</b>";
-              // Diagramm neu laden
-              // Hole neue Daten vom Server (z.B. per fetch) und aktualisiere das Diagramm
-              fetch("imap-scan.php", {
+            try {
+              const res = await fetch("imap-delete.php", {
                 method: "POST",
-                body: formData, // Zugangsdaten
-              })
-                .then((r) => r.json())
-                .then((newData) => {
-                  localStorage.setItem("imapTreeData", JSON.stringify(newData));
-                  drawTreemap(newData);
-                  popup.remove();
+                body: formData,
+              });
+              const json = await res.json();
+              if (json.success) {
+                showSuccess('E-Mail erfolgreich gelöscht!');
+                popup.remove();
+                
+                // Diagramm neu laden
+                const newRes = await fetch("imap-scan.php", {
+                  method: "POST",
+                  body: formData, // Zugangsdaten
                 });
-            } else {
-              popup.innerHTML += `<div style="color:red;">Fehler beim Löschen: ${json.error}</div>`;
+                const newData = await newRes.json();
+                
+                if (newData.error) {
+                  showError('Fehler beim Aktualisieren der Daten: ' + newData.error);
+                } else {
+                  localStorage.setItem("imapTreeData", JSON.stringify(newData));
+                  currentData = newData;
+                  history = [];
+                  drawTreemap(newData);
+                }
+              } else {
+                showError('Fehler beim Löschen: ' + (json.error || 'Unbekannter Fehler'));
+              }
+            } catch (error) {
+              showError('Fehler beim Löschen: ' + error.message);
             }
           };
+        })
+        .catch((error) => {
+          showError('Fehler beim Laden der E-Mail: ' + error.message);
         });
       }
 
