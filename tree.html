@@ -384,7 +384,13 @@
             <h2>📧 ${data.subject}</h2>
             <div><strong>Von:</strong> ${data.from}</div>
             <div><strong>Datum:</strong> ${data.date}</div>
-            <div><strong>Body:</strong><br><pre style="white-space:pre-wrap;">${data.body}</pre></div>
+            <div><strong>Nachricht:</strong><br>
+              ${
+              data.html
+                ? `<pre style="white-space:pre-wrap;">${data.html}</pre>`
+                : `<pre style="white-space:pre-wrap;">${data.text || ""}</pre>`
+              }
+            </div>
             <br>
             <button id="closeMailPopup">Schließen</button>
           `;
