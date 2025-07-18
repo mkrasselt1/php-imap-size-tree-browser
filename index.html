@@ -70,10 +70,6 @@
           console.log(key, value);
         }
         console.log(...formData);
-        formData.set(
-          "ssl",
-          document.getElementById("ssl").checked ? "true" : "false"
-        );
         console.debug("Formulardaten:", Object.fromEntries(formData.entries()));
 
         output.textContent = "Verbindung wird aufgebaut...";
