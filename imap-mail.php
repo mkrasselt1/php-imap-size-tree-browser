@@ -20,14 +20,12 @@ if (!$server || !$user || !$pass || !$folder || !$uid) {
 }
 
 $mailbox = "{" . $server . ":" . $port . ($ssl ? "/ssl" : "") . "}";
-$inbox = @imap_open($mailbox, $user, $pass);
+$inbox = @imap_open($folder, $user, $pass);
 if (!$inbox) {
     echo json_encode(['error' => 'IMAP-Verbindung fehlgeschlagen', 'details' => imap_last_error()]);
     exit;
 }
-
-
-@imap_reopen($inbox, $folder);
+// @imap_reopen($inbox, $folder);
 
 // Header holen
 $header = imap_headerinfo($inbox, $uid, FT_UID);
