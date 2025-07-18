@@ -190,7 +190,7 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
 
     $children = [];
     $totalSize = 0;
-    $maxMails = 100; // Limite pro Ordner für Performance
+    $maxMails = 1000; // Limite pro Ordner für Performance
 
     // Mails in Batches verarbeiten
     $numMsgs = min($check->Nmsgs, $maxMails);
