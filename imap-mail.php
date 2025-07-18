@@ -45,50 +45,67 @@ $htmlBody = '';
 $attachments = [];
 
 if (isset($structure->parts) && count($structure->parts)) {
-    foreach ($structure->parts as $i => $part) {
-        // Text und HTML wie gehabt
-        if ($part->type == 0 && strtolower($part->subtype) == 'plain') {
-            $body = imap_fetchbody($inbox, $uid, $i+1, FT_UID);
-            $textBody = ($part->encoding == 3) ? base64_decode($body) :
-                        ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
-        }
-        if ($part->type == 0 && strtolower($part->subtype) == 'html') {
-            $body = imap_fetchbody($inbox, $uid, $i+1, FT_UID);
-            $htmlBody = ($part->encoding == 3) ? base64_decode($body) :
-                        ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
-        }
-        // Attachments: nur Metadaten sammeln
-        $isAttachment = false;
-        $filename = '';
-        if (isset($part->disposition) && strtolower($part->disposition) === 'attachment') {
-            $isAttachment = true;
-        }
-        if (isset($part->parameters)) {
-            foreach ($part->parameters as $param) {
-                if (strtolower($param->attribute) === 'name') {
-                    $filename = $param->value;
-                    $isAttachment = true;
+    // Recursive function to extract text/html from all levels
+    function getBodies($inbox, $uid, $parts, $prefix = '') {
+        $result = ['text' => '', 'html' => ''];
+        foreach ($parts as $i => $part) {
+            $partNum = $prefix . ($i + 1);
+            if ($part->type == 0 && strtolower($part->subtype) == 'plain') {
+                $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
+                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) :
+                               ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
+                $result['text'] .= $bodyDecoded;
+            }
+            if ($part->type == 0 && strtolower($part->subtype) == 'html') {
+                $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
+                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) :
+                               ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
+                $result['html'] .= $bodyDecoded;
+            }
+            // If multipart, recurse
+            if (isset($part->parts) && count($part->parts)) {
+                $subResult = getBodies($inbox, $uid, $part->parts, $partNum . '.');
+                $result['text'] .= $subResult['text'];
+                $result['html'] .= $subResult['html'];
+            }
+            // Attachments: nur Metadaten sammeln
+            $isAttachment = false;
+            $filename = '';
+            if (isset($part->disposition) && strtolower($part->disposition) === 'attachment') {
+                $isAttachment = true;
+            }
+            if (isset($part->parameters)) {
+                foreach ($part->parameters as $param) {
+                    if (strtolower($param->attribute) === 'name') {
+                        $filename = $param->value;
+                        $isAttachment = true;
+                    }
                 }
             }
-        }
-        if (isset($part->dparameters)) {
-            foreach ($part->dparameters as $param) {
-                if (strtolower($param->attribute) === 'filename') {
-                    $filename = $param->value;
-                    $isAttachment = true;
+            if (isset($part->dparameters)) {
+                foreach ($part->dparameters as $param) {
+                    if (strtolower($param->attribute) === 'filename') {
+                        $filename = $param->value;
+                        $isAttachment = true;
+                    }
                 }
             }
+            if ($isAttachment && $filename) {
+                global $attachments, $uid, $folder;
+                $attachments[] = [
+                    'filename' => $filename,
+                    'size' => isset($part->bytes) ? $part->bytes : null,
+                    'partNum' => $partNum,
+                    'uid' => $uid,
+                    'folder' => $folder
+                ];
+            }
         }
-        if ($isAttachment && $filename) {
-            $attachments[] = [
-                'filename' => $filename,
-                'size' => isset($part->bytes) ? $part->bytes : null,
-                'partNum' => $i + 1,
-                'uid' => $uid,
-                'folder' => $folder
-            ];
-        }
+        return $result;
     }
+    $bodies = getBodies($inbox, $uid, $structure->parts);
+    $textBody = $bodies['text'];
+    $htmlBody = $bodies['html'];
 } else {
     // Singlepart-Mail wie gehabt
     $body = imap_body($inbox, $uid, FT_UID);
