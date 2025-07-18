@@ -358,7 +358,7 @@
       function showMailPopup(mail) {
         //mail.folder contains the servername and port in curly braces, e.g. "{imap.example.com:993/imap/ssl}"
         //it needs to be removed to get the folder name
-        const folderFull = mail.folder.replace(/{.*?}/, "").trim();
+        mail.folder = mail.folder.replace(/{.*?}/, "").trim();
         fetchMailContent(mail).then((data) => {
           let popup = document.getElementById("mail-popup");
           if (!popup) {
