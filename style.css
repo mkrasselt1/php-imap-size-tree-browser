@@ -156,6 +156,24 @@ body {
   transform: translateY(-1px);
 }
 
+/* Warnung für nicht gescannte Mails */
+.btn-warning {
+  background: #ffc107;
+  color: #212529;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-warning:hover {
+  background: #e0a800;
+  transform: translateY(-1px);
+}
+
 .loading {
   display: none;
   text-align: center;
@@ -648,6 +666,16 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.warning-node {
+  border: 2px dashed #ffc107 !important;
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%) !important;
+}
+
+.warning-node text {
+  fill: #856404 !important;
+  font-weight: 600 !important;
 }
 
 @media (max-width: 768px) {

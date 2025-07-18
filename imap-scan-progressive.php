@@ -140,6 +140,77 @@ if ($action === 'init') {
         ]
     ], JSON_UNESCAPED_UNICODE);
     
+} elseif ($action === 'extended-scan') {
+    // Schritt 2b: Erweiterten Scan für spezifischen Ordner
+    if (!$cacheKey) {
+        echo json_encode(['error' => 'Cache-Key fehlt']);
+        exit;
+    }
+    
+    $folderFullPath = $_POST['folderFullPath'] ?? '';
+    $startIndex = (int)($_POST['startIndex'] ?? 0);
+    $batchSize = (int)($_POST['batchSize'] ?? 500);
+    
+    if (!$folderFullPath) {
+        echo json_encode(['error' => 'Ordner-Pfad fehlt']);
+        exit;
+    }
+    
+    // Ordner öffnen
+    $box = @imap_reopen($inbox, $folderFullPath);
+    if (!$box) {
+        echo json_encode(['error' => 'Ordner konnte nicht geöffnet werden']);
+        exit;
+    }
+    
+    $check = imap_check($inbox);
+    if (!$check || $check->Nmsgs == 0) {
+        echo json_encode(['error' => 'Ordner ist leer']);
+        exit;
+    }
+    
+    $endIndex = min($startIndex + $batchSize, $check->Nmsgs);
+    $mails = [];
+    $totalSize = 0;
+    
+    for ($i = $startIndex + 1; $i <= $endIndex; $i++) {
+        $header = imap_headerinfo($inbox, $i);
+        if (!$header) continue;
+        
+        $size = $header->Size ?? 0;
+        $totalSize += $size;
+        
+        $uid = imap_uid($inbox, $i);
+        if (!$uid) continue;
+        
+        $subject = '';
+        if (isset($header->subject)) {
+            $subject = safe_imap_utf8($header->subject);
+        }
+        
+        $mails[] = [
+            'name' => $subject ?: 'Kein Betreff',
+            'type' => 'mail',
+            'size' => $size,
+            'uid' => $uid,
+            'messageNumber' => $i
+        ];
+    }
+    
+    // Nur die größten Mails zurückgeben
+    usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
+    $bigMails = array_slice($mails, 0, 20); // Top 20 aus diesem Batch
+    
+    echo json_encode([
+        'status' => 'extended-scan-complete',
+        'mails' => $bigMails,
+        'totalSize' => $totalSize,
+        'scannedRange' => [$startIndex + 1, $endIndex],
+        'totalMails' => $check->Nmsgs,
+        'hasMore' => $endIndex < $check->Nmsgs,
+        'nextStartIndex' => $endIndex
+    ], JSON_UNESCAPED_UNICODE);
+    
 } elseif ($action === 'finalize') {
     // Schritt 3: Ergebnisse zusammenfassen
     if (!$cacheKey) {
@@ -216,7 +287,7 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
 
     $children = [];
     $totalSize = 0;
-    $maxMails = 300; // Limite pro Ordner für Performance
+    $maxMails = 1000; // Erhöht von 300 auf 1000 für bessere Abdeckung
     $mails = []; // Array für alle Mails sammeln
 
     // Mails in Batches verarbeiten
@@ -269,6 +340,15 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
             'folder' => $shortName,
             'messageNumber' => $i, // Für Debugging
             'rawSubject' => $header->subject ?? '', // Für Debugging
+            'isTrash' => strpos(strtolower($folderFull), 'trash') !== false || 
+                        strpos(strtolower($folderFull), 'deleted') !== false ||
+                        strpos(strtolower($folderFull), 'papierkorb') !== false,
+            'debug' => [
+                'folderFull' => $folderFull,
+                'shortName' => $shortName,
+                'msgNum' => $i,
+                'uid' => $uid
+            ]
         ];
     }
     
@@ -303,13 +383,17 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
     // Wenn mehr Mails vorhanden sind, als verarbeitet wurden
     if ($check->Nmsgs > $maxMails) {
         $remainingMails = $check->Nmsgs - $maxMails;
+        $remainingPercent = round(($remainingMails / $check->Nmsgs) * 100, 1);
+        
         $children[] = [
-            'name' => "Nicht gescannte E-Mails (" . $shortName . ")",
+            'name' => "⚠️ Nicht gescannte E-Mails: $remainingMails ({$remainingPercent}%)",
             'type' => 'other-mails',
             'size' => 0,
             'count' => $remainingMails,
             'folderFull' => $folderFull,
-            'folder' => $shortName
+            'folder' => $shortName,
+            'warning' => true,
+            'details' => "Von {$check->Nmsgs} E-Mails wurden nur $maxMails gescannt. Das kann zu einem falschen Bild führen."
         ];
     }
 

@@ -616,6 +616,11 @@ function renderTreemap() {
     .attr('width', d => d.x1 - d.x0)
     .attr('height', d => d.y1 - d.y0)
     .attr('fill', d => {
+      // Warnung für nicht gescannte Mails
+      if (d.data.warning) {
+        return '#fff3cd';
+      }
+      
       let rootChild = d;
       while (rootChild.depth > 1) rootChild = rootChild.parent;
       const idx = root.children.indexOf(rootChild);
@@ -623,8 +628,9 @@ function renderTreemap() {
       const intensity = Math.min((d.depth - 1) * 0.15, 0.6);
       return shadeColor(baseColor, intensity);
     })
-    .attr('stroke', 'rgba(255,255,255,0.8)')
-    .attr('stroke-width', 1)
+    .attr('stroke', d => d.data.warning ? '#ffc107' : 'rgba(255,255,255,0.8)')
+    .attr('stroke-width', d => d.data.warning ? 2 : 1)
+    .attr('stroke-dasharray', d => d.data.warning ? '5,5' : 'none')
     .attr('rx', d => d.data.type === 'mail' ? 4 : 2)
     .style('cursor', 'pointer')
     .each(function(d) {
@@ -634,6 +640,11 @@ function renderTreemap() {
       // Sehr kleine Boxen als "tiny" markieren
       if (width < 30 || height < 15) {
         d3.select(this.parentNode).classed('tiny', true);
+      }
+      
+      // Warnung-Klasse hinzufügen
+      if (d.data.warning) {
+        d3.select(this.parentNode).classed('warning-node', true);
       }
     })
     .on('mouseover', function(event, d) {
@@ -748,6 +759,16 @@ function showItemInfo(item) {
   } else if (item.type === 'other-mails') {
     html += `<p><strong>Typ:</strong> Zusammengefasste E-Mails</p>`;
     html += `<p><strong>Anzahl:</strong> ${item.count || 'Unbekannt'}</p>`;
+    
+    // Warnung für nicht gescannte Mails
+    if (item.warning && item.details) {
+      html += `<div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 0.75rem; margin: 1rem 0;">`;
+      html += `<p style="margin: 0; color: #856404;"><strong>⚠️ Hinweis:</strong></p>`;
+      html += `<p style="margin: 0.5rem 0 0 0; color: #856404; font-size: 0.9rem;">${item.details}</p>`;
+      html += `<button class="btn btn-warning" onclick="extendedScanFolder('${item.folderFull}')" style="margin-top: 0.5rem;">`;
+      html += `🔍 Vollständigen Scan starten</button>`;
+      html += `</div>`;
+    }
   }
   
   if (history.length > 0) {
@@ -755,6 +776,50 @@ function showItemInfo(item) {
   }
   
   infoPanel.innerHTML = html;
+}
+
+async function extendedScanFolder(folderPath) {
+  try {
+    showLoading();
+    updateLoadingText('Erweiterte Analyse wird gestartet...');
+    
+    const formData = new FormData();
+    formData.append('server', localStorage.getItem('server'));
+    formData.append('port', localStorage.getItem('port'));
+    formData.append('user', localStorage.getItem('user'));
+    formData.append('pass', localStorage.getItem('pass'));
+    formData.append('ssl', localStorage.getItem('ssl'));
+    formData.append('action', 'extended-scan');
+    formData.append('folderFullPath', folderPath);
+    formData.append('startIndex', '0');
+    formData.append('batchSize', '1000');
+    
+    const response = await fetch('imap-scan-progressive.php', {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    
+    // Zeige Ergebnis
+    showSuccess(`Erweiterte Analyse abgeschlossen! ${result.mails.length} große E-Mails gefunden.`);
+    
+    // Aktualisiere die Daten mit den neuen Erkenntnissen
+    await refreshDataAfterDelete();
+    
+  } catch (error) {
+    console.error('Fehler bei erweiterter Analyse:', error);
+    showError('Erweiterte Analyse fehlgeschlagen: ' + error.message);
+    showVisualization();
+  }
 }
 
 function navigateBack() {
@@ -790,6 +855,12 @@ async function fetchMailContent(mail) {
   formData.append('folder', mail.folderFull || mail.folder || '');
   formData.append('uid', mail.uid);
   
+  console.log('Requesting mail details:', {
+    folder: mail.folderFull || mail.folder,
+    uid: mail.uid,
+    mailObject: mail
+  });
+  
   const response = await fetch('imap-mail.php', {
     method: 'POST',
     body: formData
@@ -799,7 +870,20 @@ async function fetchMailContent(mail) {
     throw new Error(`HTTP ${response.status}`);
   }
   
-  return await response.json();
+  const result = await response.json();
+  
+  if (result.error) {
+    console.error('Mail loading error:', result);
+    // Erweiterte Fehlerbehandlung für Trash/Papierkorb
+    if (result.error.includes('nicht gefunden') && result.availableUids) {
+      console.log('Available UIDs in folder:', result.availableUids);
+      console.log('Total UIDs:', result.totalUids);
+      console.log('Requested UID:', mail.uid);
+      console.log('Message Number:', result.msgno);
+    }
+  }
+  
+  return result;
 }
 
 function createMailModal(mailContent, mail) {

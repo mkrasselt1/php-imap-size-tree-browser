@@ -74,23 +74,43 @@ if (!$reopened) {
     exit;
 }
 
-// Header holen
-$header = imap_headerinfo($inbox, $uid, FT_UID);
+// Header holen - versuche verschiedene Methoden
+$header = @imap_headerinfo($inbox, $uid, FT_UID);
 if (!$header) {
-    // Zusätzliche Debug-Informationen
-    $check = imap_check($inbox);
-    $folderStatus = $check ? "Ordner: {$check->Mailbox}, Mails: {$check->Nmsgs}" : "Ordner-Status unbekannt";
+    // Versuche mit Message-Number statt UID
+    $msgno = imap_msgno($inbox, $uid);
+    if ($msgno) {
+        $header = @imap_headerinfo($inbox, $msgno);
+    }
     
-    echo json_encode([
-        'error' => 'E-Mail nicht gefunden',
-        'details' => 'Die angegebene UID existiert nicht oder ist ungültig',
-        'uid' => $uid,
-        'folder' => $folder,
-        'folderStatus' => $folderStatus,
-        'imapError' => imap_last_error()
-    ]);
-    imap_close($inbox);
-    exit;
+    if (!$header) {
+        // Noch mehr Debug-Informationen
+        $check = imap_check($inbox);
+        $folderStatus = $check ? "Ordner: {$check->Mailbox}, Mails: {$check->Nmsgs}" : "Ordner-Status unbekannt";
+        
+        // Versuche alle UIDs in diesem Ordner zu listen
+        $allUids = [];
+        if ($check && $check->Nmsgs > 0) {
+            $overview = imap_fetch_overview($inbox, "1:{$check->Nmsgs}");
+            foreach ($overview as $msg) {
+                $allUids[] = $msg->uid;
+            }
+        }
+        
+        echo json_encode([
+            'error' => 'E-Mail nicht gefunden',
+            'details' => 'Die angegebene UID existiert nicht oder ist ungültig',
+            'uid' => $uid,
+            'folder' => $folder,
+            'folderStatus' => $folderStatus,
+            'msgno' => $msgno,
+            'availableUids' => array_slice($allUids, 0, 10), // Nur erste 10 UIDs
+            'totalUids' => count($allUids),
+            'imapError' => imap_last_error()
+        ]);
+        imap_close($inbox);
+        exit;
+    }
 }
 
 // Absender und Empfänger extrahieren
