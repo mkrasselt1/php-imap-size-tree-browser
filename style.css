@@ -611,6 +611,47 @@ body {
   word-wrap: break-word;
 }
 
+/* D3.js Treemap Text-Handling */
+.chart-container text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  pointer-events: none;
+}
+
+.chart-container .node text {
+  font-size: 10px;
+  fill: #333;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+.chart-container .node:hover text {
+  font-weight: 600;
+  fill: #000;
+}
+
+/* Sehr kleine Nodes komplett ausblenden */
+.chart-container .node.tiny {
+  opacity: 0.8;
+}
+
+.chart-container .node.tiny text {
+  display: none;
+}
+
+/* Parent-Label Handling */
+.chart-container .parent-label {
+  font-size: 12px;
+  font-weight: 600;
+  fill: #333;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 768px) {
   .container {
     padding: 10px;

@@ -568,7 +568,24 @@ function renderTreemap() {
     .attr('font-size', '12px')
     .attr('font-weight', 'bold')
     .attr('fill', '#333')
-    .text(d => `📁 ${d.data.name}`);
+    .each(function(d) {
+      const element = d3.select(this);
+      const width = d.x1 - d.x0;
+      const height = d.y1 - d.y0;
+      
+      // Nur bei ausreichend großen Parent-Boxen Text anzeigen
+      if (width < 80 || height < 25) {
+        element.style('display', 'none');
+        return;
+      }
+      
+      // Maximale Textlänge basierend auf Boxbreite
+      const maxChars = Math.max(5, Math.floor((width - 20) / 8)); // ~8px pro Zeichen für Bold
+      const name = truncateText(d.data.name, maxChars);
+      
+      element.text(`📁 ${name}`)
+        .style('max-width', (width - 12) + 'px');
+    });
   
   // Leaf nodes
   const nodes = svg.selectAll('.node')
@@ -593,11 +610,26 @@ function renderTreemap() {
     .attr('stroke-width', 1)
     .attr('rx', d => d.data.type === 'mail' ? 4 : 2)
     .style('cursor', 'pointer')
+    .each(function(d) {
+      const width = d.x1 - d.x0;
+      const height = d.y1 - d.y0;
+      
+      // Sehr kleine Boxen als "tiny" markieren
+      if (width < 30 || height < 15) {
+        d3.select(this.parentNode).classed('tiny', true);
+      }
+    })
     .on('mouseover', function(event, d) {
-      d3.select(this)
-        .attr('stroke', 'var(--primary-color)')
-        .attr('stroke-width', 2)
-        .style('filter', 'drop-shadow(2px 2px 4px rgba(0,119,204,0.3))');
+      const width = d.x1 - d.x0;
+      const height = d.y1 - d.y0;
+      
+      // Nur bei ausreichend großen Boxen Hover-Effekt
+      if (width >= 30 && height >= 15) {
+        d3.select(this)
+          .attr('stroke', 'var(--primary-color)')
+          .attr('stroke-width', 2)
+          .style('filter', 'drop-shadow(2px 2px 4px rgba(0,119,204,0.3))');
+      }
     })
     .on('mouseout', function(event, d) {
       d3.select(this)
@@ -612,11 +644,32 @@ function renderTreemap() {
     .attr('font-size', '10px')
     .attr('fill', '#333')
     .style('pointer-events', 'none')
-    .text(d => {
+    .style('overflow', 'hidden')
+    .style('text-overflow', 'ellipsis')
+    .style('white-space', 'nowrap')
+    .each(function(d) {
+      const element = d3.select(this);
+      const width = d.x1 - d.x0;
+      const height = d.y1 - d.y0;
+      
+      // Mindestgröße für Textanzeige: 60px Breite und 20px Höhe
+      if (width < 60 || height < 20) {
+        element.style('display', 'none');
+        return;
+      }
+      
       const icon = d.data.type === 'mail' ? '📧' : 
                   d.data.type === 'other-mails' ? '📦' : '📁';
-      const name = d.data.type === 'mail' ? truncateText(d.data.name, 20) : d.data.name;
-      return `${icon} ${name}`;
+      
+      // Maximale Textlänge basierend auf Boxbreite
+      const maxChars = Math.max(5, Math.floor((width - 20) / 6)); // ~6px pro Zeichen
+      const name = d.data.type === 'mail' ? 
+                   truncateText(d.data.name, maxChars) : 
+                   truncateText(d.data.name, maxChars);
+      
+      element.text(`${icon} ${name}`)
+        .attr('width', width - 8) // Padding berücksichtigen
+        .style('max-width', (width - 8) + 'px');
     });
   
   // Tooltip für vollständige Namen
