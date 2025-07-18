@@ -1359,6 +1359,28 @@
           currentModal.remove();
         }
         
+        // Debug-Informationen für Inkonsistenz-Prüfung
+        console.log('Mail from scan:', {
+          name: mail.name,
+          uid: mail.uid,
+          folder: mail.folder,
+          folderFull: mail.folderFull,
+          rawSubject: mail.rawSubject
+        });
+        
+        console.log('Mail content from server:', {
+          subject: mailContent.subject,
+          debug: mailContent.debug
+        });
+        
+        // Warnung bei Inkonsistenz
+        if (mailContent.debug && mailContent.debug.rawSubject !== mail.rawSubject) {
+          console.warn('Subject mismatch detected:', {
+            scanSubject: mail.rawSubject,
+            serverSubject: mailContent.debug.rawSubject
+          });
+        }
+        
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.innerHTML = `
@@ -1380,6 +1402,19 @@
                 <label>Größe:</label>
                 <span>${formatSize(mail.size || 0)}</span>
               </div>
+              <div class="mail-detail">
+                <label>UID:</label>
+                <span>${mail.uid} (Ordner: ${mail.folder})</span>
+              </div>
+              ${mailContent.debug && mailContent.debug.rawSubject !== mail.rawSubject ? `
+                <div class="mail-detail" style="background: #fff3cd; padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
+                  <label style="color: #856404;">⚠️ Debug-Info:</label>
+                  <div style="font-size: 0.9rem; color: #856404;">
+                    <div>Scan-Betreff: ${mail.rawSubject || 'leer'}</div>
+                    <div>Server-Betreff: ${mailContent.debug.rawSubject || 'leer'}</div>
+                  </div>
+                </div>
+              ` : ''}
               ${mailContent.attachments && mailContent.attachments.length > 0 ? `
                 <div class="mail-detail">
                   <label>Anhänge:</label>

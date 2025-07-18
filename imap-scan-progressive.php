@@ -202,12 +202,35 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         $size = $header->Size ?? 0;
         $totalSize += $size;
         
+        // UID für diese Mail abrufen
+        $uid = imap_uid($inbox, $i);
+        if (!$uid) continue;
+        
         // Nur große Mails einzeln anzeigen (> 1MB)
         if ($size > 1048576) {
-            $from = isset($header->fromaddress) ? imap_utf8($header->fromaddress) : '';
-            $subject = isset($header->subject) ? imap_utf8($header->subject) : '';
-            $date = isset($header->date) ? $header->date : '';
-            $uid = imap_uid($inbox, $i);
+            // Sicherstellen, dass Subject richtig kodiert ist
+            $subject = '';
+            if (isset($header->subject)) {
+                $subject = imap_utf8($header->subject);
+                // Zusätzliche Bereinigung für kaputte Encoding
+                if (!$subject || trim($subject) === '') {
+                    $subject = isset($header->Subject) ? imap_utf8($header->Subject) : '';
+                }
+            }
+            
+            $from = '';
+            if (isset($header->fromaddress)) {
+                $from = imap_utf8($header->fromaddress);
+            } elseif (isset($header->from)) {
+                $from = imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
+            }
+            
+            $date = '';
+            if (isset($header->date)) {
+                $date = $header->date;
+            } elseif (isset($header->Date)) {
+                $date = $header->Date;
+            }
             
             $children[] = [
                 'name' => $subject ?: 'Kein Betreff',
@@ -217,7 +240,9 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
                 'date' => $date,
                 'uid' => $uid,
                 'folderFull' => $folderFull,
-                'folder' => $shortName
+                'folder' => $shortName,
+                'messageNumber' => $i, // Für Debugging
+                'rawSubject' => $header->subject ?? '', // Für Debugging
             ];
         }
     }

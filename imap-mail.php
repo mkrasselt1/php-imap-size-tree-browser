@@ -73,11 +73,32 @@ if (!$header) {
 }
 
 // Absender und Empfänger extrahieren
-$from = isset($header->fromaddress) ? imap_utf8($header->fromaddress) : '';
-$to = isset($header->toaddress) ? imap_utf8($header->toaddress) : '';
+$from = '';
+if (isset($header->fromaddress)) {
+    $from = imap_utf8($header->fromaddress);
+} elseif (isset($header->from)) {
+    $from = imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
+}
 
-// Subject
-$subject = imap_utf8($header->subject ?? '');
+$to = '';
+if (isset($header->toaddress)) {
+    $to = imap_utf8($header->toaddress);
+} elseif (isset($header->to)) {
+    $to = imap_utf8($header->to[0]->mailbox . '@' . $header->to[0]->host);
+}
+
+// Subject - robuste Behandlung
+$subject = '';
+if (isset($header->subject)) {
+    $subject = imap_utf8($header->subject);
+    // Zusätzliche Bereinigung für kaputte Encoding
+    if (!$subject || trim($subject) === '') {
+        $subject = isset($header->Subject) ? imap_utf8($header->Subject) : '';
+    }
+}
+if (!$subject) {
+    $subject = 'Kein Betreff';
+}
 
 // Datum hinzufügen
 $date = isset($header->date) ? $header->date : '';
@@ -185,7 +206,14 @@ echo json_encode([
     'date' => $date,
     'text' => $textBody,
     'html' => $htmlBody,
-    'attachments' => $attachments
+    'attachments' => $attachments,
+    'debug' => [
+        'uid' => $uid,
+        'folder' => $folder,
+        'rawSubject' => $header->subject ?? '',
+        'headerFrom' => $header->fromaddress ?? '',
+        'headerDate' => $header->date ?? ''
+    ]
 ], JSON_UNESCAPED_UNICODE);
 
 imap_close($inbox);
