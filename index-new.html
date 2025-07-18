@@ -270,7 +270,7 @@
         border-radius: 4px;
         overflow: hidden;
         cursor: pointer;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
         font-size: 11px;
         padding: 4px;
         word-wrap: break-word;
@@ -279,8 +279,8 @@
       .node:hover {
         border-color: var(--primary-color);
         border-width: 2px;
+        box-shadow: 0 2px 8px rgba(0, 119, 204, 0.3);
         z-index: 100;
-        transform: scale(1.02);
       }
 
       .node.selected {
@@ -1023,13 +1023,27 @@
           })
           .attr('stroke', 'rgba(255,255,255,0.8)')
           .attr('stroke-width', 1)
-          .attr('rx', d => d.data.type === 'mail' ? 4 : 2);
+          .attr('rx', d => d.data.type === 'mail' ? 4 : 2)
+          .style('cursor', 'pointer')
+          .on('mouseover', function(event, d) {
+            d3.select(this)
+              .attr('stroke', 'var(--primary-color)')
+              .attr('stroke-width', 2)
+              .style('filter', 'drop-shadow(2px 2px 4px rgba(0,119,204,0.3))');
+          })
+          .on('mouseout', function(event, d) {
+            d3.select(this)
+              .attr('stroke', 'rgba(255,255,255,0.8)')
+              .attr('stroke-width', 1)
+              .style('filter', 'none');
+          });
         
         nodes.append('text')
           .attr('x', 4)
           .attr('y', 16)
           .attr('font-size', '10px')
           .attr('fill', '#333')
+          .style('pointer-events', 'none')
           .text(d => {
             const icon = d.data.type === 'mail' ? '📧' : 
                         d.data.type === 'other-mails' ? '📦' : '📁';
