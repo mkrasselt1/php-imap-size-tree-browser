@@ -676,7 +676,7 @@
       });
 
       function loadFormData() {
-        ['server', 'port', 'user', 'ssl'].forEach(id => {
+        ['server', 'port', 'user', 'ssl', 'pass'].forEach(id => {
           const element = document.getElementById(id);
           const value = localStorage.getItem(id);
           if (value && element) {
@@ -690,7 +690,7 @@
       }
 
       function saveFormData() {
-        ['server', 'port', 'user', 'ssl'].forEach(id => {
+        ['server', 'port', 'user', 'ssl', 'pass'].forEach(id => {
           const element = document.getElementById(id);
           if (element) {
             const value = element.type === 'checkbox' ? element.checked : element.value;

@@ -20,9 +20,23 @@ if (!$server || !$user || !$pass || !$folder || !$uid) {
 }
 
 $mailbox = "{" . $server . ":" . $port . ($ssl ? "/ssl" : "") . "}";
+
+// Set IMAP timeout to fail faster on wrong credentials
+imap_timeout(IMAP_OPENTIMEOUT, 10);
+imap_timeout(IMAP_READTIMEOUT, 10);
+imap_timeout(IMAP_WRITETIMEOUT, 10);
+imap_timeout(IMAP_CLOSETIMEOUT, 10);
+
 $inbox = @imap_open($folder, $user, $pass);
 if (!$inbox) {
-    echo json_encode(['error' => 'IMAP-Verbindung fehlgeschlagen', 'details' => imap_last_error()]);
+    $error = imap_last_error();
+    echo json_encode([
+        'error' => 'IMAP-Verbindung fehlgeschlagen', 
+        'details' => $error,
+        'message' => strpos($error, 'AUTHENTICATE') !== false || strpos($error, 'LOGIN') !== false 
+            ? 'Benutzername oder Passwort falsch' 
+            : 'Verbindung zum Server fehlgeschlagen'
+    ]);
     exit;
 }
 
