@@ -328,6 +328,7 @@
       }
 
       async function fetchMailContent(mail) {
+        console.debug("Hole Mail-Inhalt für mail:", mail);
         // Zugangsdaten aus LocalStorage holen
         const server = localStorage.getItem("server");
         const port = localStorage.getItem("port");
