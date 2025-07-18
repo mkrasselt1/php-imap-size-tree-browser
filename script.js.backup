@@ -157,10 +157,6 @@ document.addEventListener('DOMContentLoaded', function() {
   loadFormData();
   checkExistingData();
   setupEventListeners();
-  
-  // Test: Prüfe ob der Submit-Button funktioniert
-  console.log('IMAP Analyse Tool geladen');
-  console.log('Submit-Button gefunden:', document.getElementById('imapForm'));
 });
 
 function loadFormData() {
@@ -225,32 +221,19 @@ async function handleFormSubmit(e) {
     const isDemoMode = document.getElementById('demo').checked;
     
     if (isDemoMode) {
-      // Use demo data from external JSON file
+      // Use demo data
       updateLoadingText('Demo-Daten werden geladen...');
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate loading
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate loading
       
-      try {
-        const response = await fetch('demo-data.json');
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        const demoData = await response.json();
-        
-        imapData = demoData;
-        currentData = imapData;
-        localStorage.setItem('imapTreeData', JSON.stringify(imapData));
-        
-        updateLoadingText('Demo-Daten erfolgreich geladen!');
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        showVisualization();
-        return;
-      } catch (error) {
-        console.error('Fehler beim Laden der Demo-Daten:', error);
-        showError('Fehler beim Laden der Demo-Daten: ' + error.message);
-        showLogin();
-        return;
-      }
+      imapData = demoData;
+      currentData = imapData;
+      localStorage.setItem('imapTreeData', JSON.stringify(imapData));
+      
+      updateLoadingText('Demo-Daten erfolgreich geladen!');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      showVisualization();
+      return;
     }
     
     // Entscheidung zwischen normalem und progressivem Scan
@@ -1337,4 +1320,36 @@ async function refreshDataAfterDelete() {
     showError('Fehler beim Aktualisieren der Daten: ' + error.message);
     showLogin(); // Zurück zum Login bei Fehlern
   }
+}
+
+// Diese Funktion wird nicht mehr benötigt - die Demo-Funktionalität wurde in die Hauptfunktion integriert
+  imapData = demoData;
+  showVisualization();
+  
+  /*
+  saveFormData();
+  showLoading();
+
+  const formData = new FormData(e.target);
+  
+  try {
+    // Entscheidung zwischen normalem und progressivem Scan
+    const useProgressiveScan = confirm(
+      'Ihr Postfach wird analysiert.\n\n' +
+      'Für große Postfächer (>5GB) empfehlen wir den progressiven Scan.\n\n' +
+      'Klicken Sie "OK" für progressiven Scan oder "Abbrechen" für normalen Scan.'
+    );
+
+    if (useProgressiveScan) {
+      await handleProgressiveScan(formData);
+    } else {
+      await handleNormalScan(formData);
+    }
+    
+  } catch (error) {
+    console.error('Fehler beim Laden der IMAP-Daten:', error);
+    showError('Verbindung fehlgeschlagen: ' + error.message);
+    showLogin();
+  }
+  */
 }

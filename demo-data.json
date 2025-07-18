@@ -1,0 +1,151 @@
+{
+  "name": "Demo INBOX",
+  "type": "folder",
+  "size": 52428800,
+  "children": [
+    {
+      "name": "INBOX",
+      "type": "folder",
+      "size": 20971520,
+      "children": [
+        {
+          "name": "Willkommen bei der Demo",
+          "type": "mail",
+          "size": 2097152,
+          "uid": "demo-1",
+          "from": "demo@example.com",
+          "subject": "Willkommen bei der Demo",
+          "date": "2025-07-18T12:00:00.000Z"
+        },
+        {
+          "name": "Test E-Mail mit Anhang",
+          "type": "mail",
+          "size": 5242880,
+          "uid": "demo-2",
+          "from": "test@example.com",
+          "subject": "Test E-Mail mit Anhang",
+          "date": "2025-07-17T10:30:00.000Z"
+        },
+        {
+          "name": "Wichtige Besprechung morgen",
+          "type": "mail",
+          "size": 1048576,
+          "uid": "demo-3",
+          "from": "kollege@firma.de",
+          "subject": "Wichtige Besprechung morgen",
+          "date": "2025-07-16T14:15:00.000Z"
+        },
+        {
+          "name": "Newsletter: Neue Features",
+          "type": "mail",
+          "size": 3145728,
+          "uid": "demo-4",
+          "from": "news@service.com",
+          "subject": "Newsletter: Neue Features",
+          "date": "2025-07-15T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "Sent",
+      "type": "folder",
+      "size": 15728640,
+      "children": [
+        {
+          "name": "Gesendete Nachricht",
+          "type": "mail",
+          "size": 1048576,
+          "uid": "demo-5",
+          "from": "user@example.com",
+          "subject": "Gesendete Nachricht",
+          "date": "2025-07-14T16:45:00.000Z"
+        },
+        {
+          "name": "Fwd: Projektdokumentation",
+          "type": "mail",
+          "size": 8388608,
+          "uid": "demo-6",
+          "from": "user@example.com",
+          "subject": "Fwd: Projektdokumentation",
+          "date": "2025-07-13T11:20:00.000Z"
+        },
+        {
+          "name": "Antwort auf Kundenanfrage",
+          "type": "mail",
+          "size": 2097152,
+          "uid": "demo-7",
+          "from": "user@example.com",
+          "subject": "Antwort auf Kundenanfrage",
+          "date": "2025-07-12T13:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "Drafts",
+      "type": "folder",
+      "size": 5242880,
+      "children": [
+        {
+          "name": "Entwurf: Quartalsbericht",
+          "type": "mail",
+          "size": 3145728,
+          "uid": "demo-8",
+          "from": "user@example.com",
+          "subject": "Entwurf: Quartalsbericht",
+          "date": "2025-07-11T15:00:00.000Z"
+        },
+        {
+          "name": "Unvollständige E-Mail",
+          "type": "mail",
+          "size": 524288,
+          "uid": "demo-9",
+          "from": "user@example.com",
+          "subject": "Unvollständige E-Mail",
+          "date": "2025-07-10T08:45:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "Trash",
+      "type": "folder",
+      "size": 15728640,
+      "children": [
+        {
+          "name": "Gelöschte E-Mail",
+          "type": "mail",
+          "size": 1048576,
+          "uid": "demo-10",
+          "from": "old@example.com",
+          "subject": "Gelöschte E-Mail",
+          "date": "2025-06-01T10:00:00.000Z"
+        },
+        {
+          "name": "Spam-Nachricht",
+          "type": "mail",
+          "size": 204800,
+          "uid": "demo-11",
+          "from": "spam@spammer.com",
+          "subject": "Spam-Nachricht",
+          "date": "2025-05-15T12:00:00.000Z"
+        },
+        {
+          "name": "Alte Rechnung",
+          "type": "mail",
+          "size": 2097152,
+          "uid": "demo-12",
+          "from": "billing@service.com",
+          "subject": "Alte Rechnung",
+          "date": "2025-05-01T09:30:00.000Z"
+        },
+        {
+          "name": "Nicht gescannte E-Mails",
+          "type": "other-mails",
+          "size": 12480512,
+          "count": 850,
+          "warning": true,
+          "folderFull": "Trash"
+        }
+      ]
+    }
+  ]
+}
