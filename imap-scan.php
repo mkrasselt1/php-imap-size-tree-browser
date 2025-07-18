@@ -114,9 +114,10 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
     }
     if ($otherSize > 0) {
         $children[] = [
-            'name' => 'Weitere Mails',
+            'name' => 'Weitere Mails (' . $shortName . ')',
             'size' => $otherSize,
-            'type' => 'other-mails'
+            'type' => 'other-mails',
+            'count' => count($otherMails)
         ];
     }
 

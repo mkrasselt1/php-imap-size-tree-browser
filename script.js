@@ -31,6 +31,26 @@ const debounce = (func, wait) => {
   };
 };
 
+// Hilfsfunktion für Textkürzung
+const truncateText = (text, maxLength = 30) => {
+  if (!text || text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+};
+
+// Hilfsfunktion für erweiterte Mail-Namen
+const formatMailName = (item, truncate = true) => {
+  if (!item || item.type !== 'mail') return item?.name || '';
+  
+  const icon = '📧';
+  const name = item.name || 'Kein Betreff';
+  
+  if (truncate) {
+    return `${icon} ${truncateText(name, 25)}`;
+  } else {
+    return `${icon} ${name}`;
+  }
+};
+
 // Initialisierung
 document.addEventListener('DOMContentLoaded', function() {
   loadFormData();
@@ -441,8 +461,12 @@ function renderSidebarItems(items, container, depth) {
     const icon = item.type === 'mail' ? '📧' : 
                  item.type === 'other-mails' ? '📦' : '📁';
     
+    // Gekürzte und vollständige Namen vorbereiten
+    const shortName = item.type === 'mail' ? truncateText(item.name, 25) : item.name;
+    const fullName = item.name;
+    
     element.innerHTML = `
-      <span>${icon} ${item.name}</span>
+      <span class="item-text" title="${fullName}">${icon} ${shortName}</span>
       <span style="color: #666; font-size: 0.9rem;">${formatSize(item.size || item.childrenTotalSize || 0)}</span>
       ${item.children && item.children.length > 0 ? '<span class="sidebar-toggle">▶</span>' : ''}
     `;
@@ -591,7 +615,16 @@ function renderTreemap() {
     .text(d => {
       const icon = d.data.type === 'mail' ? '📧' : 
                   d.data.type === 'other-mails' ? '📦' : '📁';
-      return `${icon} ${d.data.name}`;
+      const name = d.data.type === 'mail' ? truncateText(d.data.name, 20) : d.data.name;
+      return `${icon} ${name}`;
+    });
+  
+  // Tooltip für vollständige Namen
+  nodes.append('title')
+    .text(d => {
+      const icon = d.data.type === 'mail' ? '📧' : 
+                  d.data.type === 'other-mails' ? '📦' : '📁';
+      return `${icon} ${d.data.name}\nGröße: ${formatSize(d.data.size || 0)}`;
     });
   
   nodes.on('click', (event, d) => {

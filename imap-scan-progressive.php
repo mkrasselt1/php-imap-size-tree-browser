@@ -291,7 +291,7 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
     // Restliche Mails zusammenfassen
     if ($otherSize > 0) {
         $children[] = [
-            'name' => "Weitere E-Mails (" . count($otherMails) . ")",
+            'name' => "Weitere E-Mails (" . $shortName . ")",
             'type' => 'other-mails',
             'size' => $otherSize,
             'count' => count($otherMails),
@@ -304,7 +304,7 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
     if ($check->Nmsgs > $maxMails) {
         $remainingMails = $check->Nmsgs - $maxMails;
         $children[] = [
-            'name' => "Nicht gescannte E-Mails ($remainingMails)",
+            'name' => "Nicht gescannte E-Mails (" . $shortName . ")",
             'type' => 'other-mails',
             'size' => 0,
             'count' => $remainingMails,

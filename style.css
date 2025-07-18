@@ -296,7 +296,7 @@ body {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 4px;
-  overflow: hidden;
+  overflow: visible; /* Geändert für bessere Hover-Effekte */
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 11px;
@@ -309,17 +309,12 @@ body {
   border-width: 2px;
   box-shadow: 0 2px 8px rgba(0, 119, 204, 0.3);
   z-index: 100;
+  transform: scale(1.02);
+  transform: scale(1.02);
 }
 
-.node.selected {
-  border-color: var(--primary-color);
-  border-width: 3px;
-  box-shadow: 0 0 10px rgba(0, 119, 204, 0.5);
-}
-
-.node.mail {
-  border-style: dashed;
-  border-radius: 8px;
+.node:hover text {
+  font-weight: bold;
 }
 
 .parent-node {
@@ -578,6 +573,42 @@ body {
 .stat-label {
   font-size: 0.9rem;
   opacity: 0.8;
+}
+
+/* Hover-Effekte für Sidebar-Items */
+.sidebar-item .item-text {
+  transition: all 0.2s ease;
+  display: inline-block;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-item:hover .item-text {
+  max-width: none;
+  overflow: visible;
+  white-space: normal;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.25rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  position: relative;
+}
+
+/* Tooltip-Styles */
+.tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  pointer-events: none;
+  z-index: 1000;
+  max-width: 300px;
+  word-wrap: break-word;
 }
 
 @media (max-width: 768px) {
