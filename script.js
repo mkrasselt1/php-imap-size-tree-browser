@@ -1338,3 +1338,206 @@ async function refreshDataAfterDelete() {
     showLogin(); // Zurück zum Login bei Fehlern
   }
 }
+
+// Help Section Functions
+function showHelp() {
+  document.getElementById('loginSection').style.display = 'none';
+  document.getElementById('loadingSection').style.display = 'none';
+  document.getElementById('visualizationSection').style.display = 'none';
+  document.getElementById('helpSection').style.display = 'block';
+}
+
+function hideHelp() {
+  document.getElementById('helpSection').style.display = 'none';
+  
+  // Show appropriate section based on current state
+  if (imapData) {
+    showVisualization();
+  } else {
+    showLogin();
+  }
+}
+
+// Extended Scan Modal Functions
+function showExtendedScanOptions() {
+  if (!imapData || !imapData.children) {
+    showError('Keine Daten verfügbar. Bitte führen Sie zuerst eine Analyse durch.');
+    return;
+  }
+  
+  // Find folders that might have unscanned emails
+  const largeFolders = findLargeFolders(imapData);
+  
+  if (largeFolders.length === 0) {
+    showInfo('Keine Ordner mit unvollständigen Scans gefunden.');
+    return;
+  }
+  
+  // Create modal
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>🔍 Erweiterte Analyse</h2>
+        <button class="close-btn" onclick="closeExtendedScanModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Wählen Sie die Ordner aus, die vollständig analysiert werden sollen:</p>
+        <div class="folder-scan-list">
+          ${largeFolders.map(folder => `
+            <div class="folder-scan-item">
+              <div class="folder-info">
+                <div class="folder-name">${folder.name}</div>
+                <div class="folder-warning">⚠️ Möglicherweise unvollständig gescannt</div>
+              </div>
+              <button class="btn btn-sm btn-warning" onclick="extendedScanFolder('${folder.name}')">
+                🔍 Vollständig scannen
+              </button>
+            </div>
+          `).join('')}
+        </div>
+        <div style="margin-top: 1rem;">
+          <button class="btn btn-primary" onclick="extendedScanAll()">
+            🔍 Alle scannen
+          </button>
+          <button class="btn btn-secondary" onclick="closeExtendedScanModal()">
+            ❌ Abbrechen
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  currentModal = modal;
+}
+
+function closeExtendedScanModal() {
+  if (currentModal) {
+    currentModal.remove();
+    currentModal = null;
+  }
+}
+
+function findLargeFolders(data) {
+  const folders = [];
+  
+  function traverse(node) {
+    if (node.children) {
+      node.children.forEach(child => {
+        if (child.type === 'folder') {
+          // Check if folder might have unscanned emails
+          const hasWarning = child.children && child.children.some(grandchild => 
+            grandchild.type === 'other-mails' && grandchild.warning
+          );
+          
+          if (hasWarning || (child.children && child.children.length > 500)) {
+            folders.push({
+              name: child.name,
+              size: child.size,
+              path: child.name
+            });
+          }
+          
+          traverse(child);
+        }
+      });
+    }
+  }
+  
+  traverse(data);
+  return folders;
+}
+
+function extendedScanFolder(folderName) {
+  showInfo(`Erweiterte Analyse für "${folderName}" wird gestartet...`);
+  closeExtendedScanModal();
+  
+  // Here you would implement the actual extended scan
+  // For now, we'll just show a message
+  setTimeout(() => {
+    showInfo(`Erweiterte Analyse für "${folderName}" abgeschlossen. (Demo-Modus)`);
+  }, 2000);
+}
+
+function extendedScanAll() {
+  showInfo('Erweiterte Analyse für alle Ordner wird gestartet...');
+  closeExtendedScanModal();
+  
+  // Here you would implement the actual extended scan for all folders
+  setTimeout(() => {
+    showInfo('Erweiterte Analyse für alle Ordner abgeschlossen. (Demo-Modus)');
+  }, 3000);
+}
+
+// Email provider presets
+const emailPresets = {
+  'gmail': {
+    server: 'imap.gmail.com',
+    port: 993,
+    ssl: true,
+    info: 'Gmail - Verwenden Sie ein App-Passwort statt Ihres normalen Passworts'
+  },
+  'outlook': {
+    server: 'imap-mail.outlook.com',
+    port: 993,
+    ssl: true,
+    info: 'Outlook/Hotmail - Moderne Authentifizierung erforderlich'
+  },
+  'yahoo': {
+    server: 'imap.mail.yahoo.com',
+    port: 993,
+    ssl: true,
+    info: 'Yahoo Mail - App-Passwort erforderlich'
+  },
+  'icloud': {
+    server: 'imap.mail.me.com',
+    port: 993,
+    ssl: true,
+    info: 'iCloud - App-spezifisches Passwort erforderlich'
+  },
+  'web.de': {
+    server: 'imap.web.de',
+    port: 993,
+    ssl: true,
+    info: 'Web.de - Standard IMAP-Zugang'
+  },
+  'gmx': {
+    server: 'imap.gmx.net',
+    port: 993,
+    ssl: true,
+    info: 'GMX - Standard IMAP-Zugang'
+  }
+};
+
+function setPreset(provider) {
+  const preset = emailPresets[provider];
+  if (!preset) return;
+  
+  document.getElementById('server').value = preset.server;
+  document.getElementById('port').value = preset.port;
+  document.getElementById('ssl').checked = preset.ssl;
+  
+  // Show info about the provider
+  showInfo(`${provider.toUpperCase()}: ${preset.info}`);
+}
+
+function showInfo(message) {
+  const alert = document.createElement('div');
+  alert.className = 'alert alert-info';
+  alert.innerHTML = `
+    <span class="alert-icon">ℹ️</span>
+    <span class="alert-text">${message}</span>
+    <button class="alert-close" onclick="this.parentElement.remove()">×</button>
+  `;
+  
+  document.querySelector('.container').prepend(alert);
+  
+  // Auto-remove after 10 seconds
+  setTimeout(() => {
+    if (alert.parentElement) {
+      alert.remove();
+    }
+  }, 10000);
+}
