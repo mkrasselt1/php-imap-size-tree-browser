@@ -275,8 +275,6 @@
           .style("width", (d) => `${d.x1 - d.x0}px`)
           .style("height", (d) => `${d.y1 - d.y0}px`)
           .style("background", (d) => {
-            if (d.data.type === "mail") return "#ffe0e0";
-            if (d.data.type === "other-mails") return "#e0e0ff";
             // Grundfarbe nach Root-Child-Index
             let rootChild = d;
             while (rootChild.depth > 1) rootChild = rootChild.parent;
@@ -308,6 +306,9 @@
             highlightChart(selectedUid);
             showInfo(d.data);
             renderSidebar(currentData, document.getElementById("sidebar"));
+            if (d.data.type === "mail") {
+              showMailPopup(d.data);
+            }
           });
       }
 
