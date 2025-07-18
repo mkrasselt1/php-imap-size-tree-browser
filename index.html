@@ -66,9 +66,6 @@
         });
 
         const formData = new FormData(form);
-        for (var [key, value] of formData.entries()) {
-          console.log(key, value);
-        }
         console.log(...formData);
         console.debug("Formulardaten:", Object.fromEntries(formData.entries()));
 
