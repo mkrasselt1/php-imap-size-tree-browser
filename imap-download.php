@@ -1,13 +1,13 @@
 <?php
-$server = $_GET['server'] ?? '';
-$port   = $_GET['port'] ?? '993';
-$user   = $_GET['user'] ?? '';
-$pass   = $_GET['pass'] ?? '';
-$ssl    = ($_GET['ssl'] ?? 'false') === 'true';
-$folder = $_GET['folder'] ?? '';
-$uid    = $_GET['uid'] ?? '';
-$partNum = $_GET['partNum'] ?? '';
-$filename = $_GET['filename'] ?? 'attachment.bin';
+$server   = $_POST['server'] ?? '';
+$port     = $_POST['port'] ?? '993';
+$user     = $_POST['user'] ?? '';
+$pass     = $_POST['pass'] ?? '';
+$ssl      = ($_POST['ssl'] ?? 'false') === 'true';
+$folder   = $_POST['folder'] ?? '';
+$uid      = $_POST['uid'] ?? '';
+$partNum  = $_POST['partNum'] ?? '';
+$filename = $_POST['filename'] ?? 'attachment.bin';
 
 if (!$server || !$user || !$pass || !$folder || !$uid || !$partNum) {
     http_response_code(400);

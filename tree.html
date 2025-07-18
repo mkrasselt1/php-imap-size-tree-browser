@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+popup.innerHTML += `<form id="downloadForm${att.uid}" action="imap-download.php" method="POST" target="_blank" style="display:inline;">
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
@@ -401,20 +401,23 @@
           // Beispiel für die Anzeige im Popup:
           if (data.attachments && data.attachments.length > 0) {
             popup.innerHTML += "<h3>Anhänge:</h3>";
-            data.attachments.forEach((att) => {
-              // Zugangsdaten ggf. aus localStorage holen
-              const params = new URLSearchParams({
-                server: localStorage.getItem("server"),
-                port: localStorage.getItem("port"),
-                user: localStorage.getItem("user"),
-                pass: localStorage.getItem("pass"),
-                ssl: localStorage.getItem("ssl"),
-                folder: att.folder,
-                uid: att.uid,
-                partNum: att.partNum,
-                filename: att.filename,
-              });
-              popup.innerHTML += `<a href="imap-download.php?${params.toString()}" target="_blank">${att.filename} (${att.size || "?"} Bytes)</a><br>`;
+            data.attachments.forEach((att, idx) => {
+              // Formular für jeden Anhang
+              popup.innerHTML += `
+                <form action="imap-download.php" method="POST" target="_blank" style="display:inline;">
+                  <input type="hidden" name="server" value="${localStorage.getItem("server")}" />
+                  <input type="hidden" name="port" value="${localStorage.getItem("port")}" />
+                  <input type="hidden" name="user" value="${localStorage.getItem("user")}" />
+                  <input type="hidden" name="pass" value="${localStorage.getItem("pass")}" />
+                  <input type="hidden" name="ssl" value="${localStorage.getItem("ssl")}" />
+                  <input type="hidden" name="folder" value="${att.folder}" />
+                  <input type="hidden" name="uid" value="${att.uid}" />
+                  <input type="hidden" name="partNum" value="${att.partNum}" />
+                  <input type="hidden" name="filename" value="${att.filename}" />
+                  <button type="submit">${att.filename} (${att.size || "?"} Bytes) herunterladen</button>
+                </form>
+                <br>
+              `;
             });
           }
         });
