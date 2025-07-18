@@ -448,6 +448,56 @@ popup.innerHTML += `
                     }</pre>`
               }
             </div>`;
+
+            popup.innerHTML += `
+  <form id="deleteMailForm" style="display:inline;">
+    <input type="hidden" name="server" value="${localStorage.getItem(
+      "server"
+    )}" />
+    <input type="hidden" name="port" value="${localStorage.getItem("port")}" />
+    <input type="hidden" name="user" value="${localStorage.getItem("user")}" />
+    <input type="hidden" name="pass" value="${localStorage.getItem("pass")}" />
+    <input type="hidden" name="ssl" value="${localStorage.getItem("ssl")}" />
+    <input type="hidden" name="folder" value="${
+      mail.folderFull || mail.folder
+    }" />
+    <input type="hidden" name="uid" value="${mail.uid}" />
+    <button type="submit" style="background:#e63946;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;">🗑️ Mail löschen</button>
+  </form>
+  <br>
+`;
+
+            // Event-Handler für das Löschen
+            document.getElementById("deleteMailForm").onsubmit =
+              async function (e) {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const res = await fetch("imap-delete.php", {
+                  method: "POST",
+                  body: formData,
+                });
+                const json = await res.json();
+                if (json.success) {
+                  popup.innerHTML = "<b>Mail gelöscht!</b>";
+                  // Diagramm neu laden
+                  // Hole neue Daten vom Server (z.B. per fetch) und aktualisiere das Diagramm
+                  fetch("imap-scan.php", {
+                    method: "POST",
+                    body: formData, // Zugangsdaten
+                  })
+                    .then((r) => r.json())
+                    .then((newData) => {
+                      localStorage.setItem(
+                        "imapTreeData",
+                        JSON.stringify(newData)
+                      );
+                      drawTreemap(newData);
+                      popup.remove();
+                    });
+                } else {
+                  popup.innerHTML += `<div style="color:red;">Fehler beim Löschen: ${json.error}</div>`;
+                }
+              };
           });
         }
 
