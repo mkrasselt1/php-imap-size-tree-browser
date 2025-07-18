@@ -372,9 +372,6 @@ popup.innerHTML += `
         }
 
         function showMailPopup(mail) {
-          document.getElementById("closeMailPopup").onclick = () => {
-            popup.remove();
-          };
           fetchMailContent(mail).then((data) => {
             popup = document.getElementById("mail-popup");
             if (!popup) {
@@ -402,6 +399,9 @@ popup.innerHTML += `
             <button id="closeMailPopup">Schließen</button>
             <br>
           `;
+            document.getElementById("closeMailPopup").onclick = () => {
+              popup.remove();
+            };
 
             // Beispiel für die Anzeige im Popup:
             if (data.attachments && data.attachments.length > 0) {
