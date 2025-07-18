@@ -67,6 +67,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
                 'date' => $overview[0]->date ?? '',
                 'size' => $overview[0]->size,
                 'uid' => $overview[0]->uid ?? $i,
+                'folder' => $folderFull,
                 'type' => 'mail'
             ];
             $mails[] = $mail;
