@@ -26,13 +26,19 @@ if (!$inbox) {
 @imap_reopen($inbox, $folder);
 $body = imap_body($inbox, $uid, FT_UID);
 $header = imap_headerinfo($inbox, $uid, FT_UID);
-
-$result = [
-    'subject' => imap_utf8($header->subject ?? ''),
-    'from' => imap_utf8($header->fromaddress ?? ''),
-    'date' => $header->date ?? '',
-    'body' => $body
-];
+$overview = imap_fetch_overview($inbox, $i);
+if ($overview && isset($overview[0]->size)) {
+    $result = [
+        'subject' => imap_utf8($header->subject ?? ''),
+        'name' => imap_utf8($overview[0]->subject ?? '(kein Betreff)'),
+        'from' => imap_utf8($header->fromaddress ?? ''),
+        'date' => $overview[0]->date ?? '',
+        'size' => $overview[0]->size,
+        'uid' => $overview[0]->uid ?? $i,
+        'body' => $body,
+        'type' => 'mail',
+    ];
+}
 
 // Anhänge extrahieren, wenn gewünscht
 if ($getAttachments) {
@@ -63,7 +69,7 @@ if ($getAttachments) {
                 }
             }
             if ($isAttachment) {
-                $attachmentBody = imap_fetchbody($inbox, $uid, $i+1, FT_UID);
+                $attachmentBody = imap_fetchbody($inbox, $uid, $i + 1, FT_UID);
                 // Base64 oder Quoted-Printable dekodieren
                 if ($part->encoding == 3) { // BASE64
                     $attachmentBody = base64_decode($attachmentBody);
