@@ -42,6 +42,15 @@ if (!$inbox) {
 
 // Header holen
 $header = imap_headerinfo($inbox, $uid, FT_UID);
+if (!$header) {
+    echo json_encode([
+        'error' => 'E-Mail nicht gefunden',
+        'details' => 'Die angegebene UID existiert nicht oder ist ungültig',
+        'uid' => $uid
+    ]);
+    imap_close($inbox);
+    exit;
+}
 
 // Absender und Empfänger extrahieren
 $from = isset($header->fromaddress) ? imap_utf8($header->fromaddress) : '';
@@ -50,8 +59,20 @@ $to = isset($header->toaddress) ? imap_utf8($header->toaddress) : '';
 // Subject
 $subject = imap_utf8($header->subject ?? '');
 
+// Datum hinzufügen
+$date = isset($header->date) ? $header->date : '';
+
 // Text und HTML-Teil extrahieren
 $structure = imap_fetchstructure($inbox, $uid, FT_UID);
+if (!$structure) {
+    echo json_encode([
+        'error' => 'E-Mail-Struktur nicht verfügbar',
+        'details' => 'Die E-Mail-Struktur konnte nicht geladen werden',
+        'uid' => $uid
+    ]);
+    imap_close($inbox);
+    exit;
+}
 $textBody = '';
 $htmlBody = '';
 $attachments = [];
@@ -65,13 +86,17 @@ if (isset($structure->parts) && count($structure->parts)) {
             $partNum = $prefix . ($i + 1);
             if ($part->type == 0 && strtolower($part->subtype) == 'plain') {
                 $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
-                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
-                $result['text'] .= $bodyDecoded;
+                if ($body !== false) {
+                    $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
+                    $result['text'] .= $bodyDecoded;
+                }
             }
             if ($part->type == 0 && strtolower($part->subtype) == 'html') {
                 $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
-                $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
-                $result['html'] .= $bodyDecoded;
+                if ($body !== false) {
+                    $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
+                    $result['html'] .= $bodyDecoded;
+                }
             }
             // If multipart, recurse
             if (isset($part->parts) && count($part->parts)) {
@@ -120,11 +145,16 @@ if (isset($structure->parts) && count($structure->parts)) {
 } else {
     // Singlepart-Mail wie gehabt
     $body = imap_body($inbox, $uid, FT_UID);
-    if ($structure->type == 0 && strtolower($structure->subtype) == 'plain') {
-        $textBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
-    }
-    if ($structure->type == 0 && strtolower($structure->subtype) == 'html') {
-        $htmlBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
+    if ($body === false) {
+        $textBody = '';
+        $htmlBody = '';
+    } else {
+        if ($structure->type == 0 && strtolower($structure->subtype) == 'plain') {
+            $textBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
+        }
+        if ($structure->type == 0 && strtolower($structure->subtype) == 'html') {
+            $htmlBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
+        }
     }
 }
 
@@ -132,6 +162,7 @@ echo json_encode([
     'subject' => $subject,
     'from' => $from,
     'to' => $to,
+    'date' => $date,
     'text' => $textBody,
     'html' => $htmlBody,
     'attachments' => $attachments
