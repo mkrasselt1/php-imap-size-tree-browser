@@ -184,6 +184,38 @@
         showBackButton();
       }
 
+      const baseColors = [
+        "#e63946", // rot
+        "#457b9d", // blau
+        "#2a9d8f", // grün
+        "#f4a261", // orange
+        "#a8dadc", // hellblau
+        "#b7b7a4", // grau
+        "#ffb4a2", // rosa
+        "#6d6875", // violett
+      ];
+
+      // Hilfsfunktion für Farbintensität je nach Tiefe
+      function shadeColor(color, percent) {
+        let f = parseInt(color.slice(1), 16),
+          t = percent < 0 ? 0 : 255,
+          p = percent < 0 ? percent * -1 : percent,
+          R = f >> 16,
+          G = (f >> 8) & 0x00ff,
+          B = f & 0x0000ff;
+        return (
+          "#" +
+          (
+            0x1000000 +
+            (Math.round((t - R) * p) + R) * 0x10000 +
+            (Math.round((t - G) * p) + G) * 0x100 +
+            (Math.round((t - B) * p) + B)
+          )
+            .toString(16)
+            .slice(1)
+        );
+      }
+
       function drawTreemap(data) {
         document.getElementById("chart").innerHTML = "";
         document.getElementById("sidebar").innerHTML = "";
@@ -245,7 +277,14 @@
           .style("background", (d) => {
             if (d.data.type === "mail") return "#ffe0e0";
             if (d.data.type === "other-mails") return "#e0e0ff";
-            return color(d.parent.data.name);
+            // Grundfarbe nach Root-Child-Index
+            let rootChild = d;
+            while (rootChild.depth > 1) rootChild = rootChild.parent;
+            const idx = root.children.indexOf(rootChild);
+            const base = baseColors[idx % baseColors.length];
+            // Intensität je nach Tiefe (max Tiefe 5)
+            const intensity = Math.min((d.depth - 1) * 0.18, 0.7);
+            return shadeColor(base, intensity);
           })
           .style("font-size", "10px")
           .style("padding", "2px")
