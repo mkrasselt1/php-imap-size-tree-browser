@@ -36,7 +36,6 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
     }
     $shortName = str_replace($mailbox, '', $folderFull);
 
-    $shortName = $folderFull;
     if (strpos($folderFull, $mailbox) === 0) {
         $shortName = substr($folderFull, strlen($mailbox));
     }
