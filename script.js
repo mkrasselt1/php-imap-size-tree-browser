@@ -527,10 +527,27 @@ function renderTreemap() {
     .sum(d => d.size || 0)
     .sort((a, b) => b.value - a.value);
   
+  // Wähle Tiling-Algorithmus basierend auf Anzahl der Elemente
+  const leafCount = root.leaves().length;
+  let tileMethod;
+  
+  if (leafCount <= 10) {
+    // Wenige Elemente: Slice-and-Dice für nebeneinander
+    tileMethod = d3.treemapSliceDice;
+  } else if (leafCount <= 50) {
+    // Mittlere Anzahl: Squarify mit ausgewogenem Ratio
+    tileMethod = d3.treemapSquarify.ratio(1.5);
+  } else {
+    // Viele Elemente: Binäre Aufteilung
+    tileMethod = d3.treemapBinary;
+  }
+  
   d3.treemap()
     .size([width, height])
     .padding(2)
-    .round(true)(root);
+    .round(true)
+    .tile(tileMethod)
+    (root);
   
   const svg = d3.select(container)
     .append('svg')

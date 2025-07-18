@@ -309,8 +309,6 @@ body {
   border-width: 2px;
   box-shadow: 0 2px 8px rgba(0, 119, 204, 0.3);
   z-index: 100;
-  transform: scale(1.02);
-  transform: scale(1.02);
 }
 
 .node:hover text {
