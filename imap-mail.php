@@ -1,4 +1,8 @@
 <?php
+set_time_limit(300);
+ini_set('max_execution_time', 300);
+ini_set('memory_limit', '512M');
+
 header('Content-Type: application/json');
 
 $server = $_POST['server'] ?? '';
