@@ -335,7 +335,12 @@
         const user = localStorage.getItem("user");
         const pass = localStorage.getItem("pass");
         const ssl = localStorage.getItem("ssl");
-        const folder = mail.folderFull || mail.folder || ""; // ggf. anpassen!
+        //mail.folder contains the servername and port in curly braces, e.g. "{imap.example.com:993/imap/ssl}"
+        //it needs to be removed to get the folder name
+        const folder = mail.folderFull.replace(/{.*?}/, "").trim() || 
+                        mail.mail.folder.replace(/{.*?}/, "").trim() || ""; // ggf. anpassen!
+        
+        // {mail.krasm.de:993/ssl}INBOX.Korrespondenz.Privat
         const uid = mail.uid;
 
         const formData = new FormData();
@@ -356,9 +361,6 @@
       }
 
       function showMailPopup(mail) {
-        //mail.folder contains the servername and port in curly braces, e.g. "{imap.example.com:993/imap/ssl}"
-        //it needs to be removed to get the folder name
-        mail.folder = mail.folder.replace(/{.*?}/, "").trim();
         fetchMailContent(mail).then((data) => {
           let popup = document.getElementById("mail-popup");
           if (!popup) {
