@@ -26,6 +26,7 @@ if (!$inbox) {
     exit;
 }
 
+
 @imap_reopen($inbox, $folder);
 
 // Header holen
