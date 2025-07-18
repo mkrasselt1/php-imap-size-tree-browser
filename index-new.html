@@ -189,6 +189,42 @@
         100% { transform: rotate(360deg); }
       }
 
+      .progress-bar {
+        width: 100%;
+        max-width: 400px;
+        height: 20px;
+        background-color: #e0e0e0;
+        border-radius: 10px;
+        overflow: hidden;
+        margin: 1rem auto;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+        width: 0%;
+        transition: width 0.3s ease;
+        border-radius: 10px;
+        position: relative;
+      }
+
+      .progress-fill::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.3) 50%, transparent 70%);
+        animation: shimmer 2s infinite;
+      }
+
+      @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+      }
+
       .visualization {
         display: none;
         background: white;
@@ -600,10 +636,16 @@
       <!-- Loading Section -->
       <div id="loadingSection" class="loading">
         <div class="spinner"></div>
-        <p>Verbindung wird aufgebaut und E-Mails analysiert...</p>
-        <p style="font-size: 0.9rem; color: #666; margin-top: 1rem;">
-          Dies kann je nach Postfachgröße einige Minuten dauern.
-        </p>
+        <p id="loadingText">Verbindung wird aufgebaut und E-Mails analysiert...</p>
+        <div id="progressContainer" style="display: none;">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <p id="progressText">0% - Initialisierung...</p>
+          <p id="progressDetails" style="font-size: 0.9rem; color: #666; margin-top: 1rem;">
+            Bitte haben Sie Geduld. Große Postfächer werden schrittweise analysiert.
+          </p>
+        </div>
       </div>
 
       <!-- Visualization Section -->
@@ -727,30 +769,175 @@
         const formData = new FormData(e.target);
         
         try {
-          const response = await fetch('imap-scan.php', {
-            method: 'POST',
-            body: formData
-          });
+          // Entscheidung zwischen normalem und progressivem Scan
+          const useProgressiveScan = confirm(
+            'Ihr Postfach wird analysiert.\n\n' +
+            'Für große Postfächer (>5GB) empfehlen wir den progressiven Scan.\n\n' +
+            'Klicken Sie "OK" für progressiven Scan oder "Abbrechen" für normalen Scan.'
+          );
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          if (useProgressiveScan) {
+            await handleProgressiveScan(formData);
+          } else {
+            await handleNormalScan(formData);
           }
-
-          const data = await response.json();
-          
-          if (data.error) {
-            throw new Error(data.error);
-          }
-
-          imapData = data;
-          currentData = data;
-          localStorage.setItem('imapTreeData', JSON.stringify(data));
-          showVisualization();
           
         } catch (error) {
           console.error('Fehler beim Laden der IMAP-Daten:', error);
           showError('Verbindung fehlgeschlagen: ' + error.message);
           showLogin();
+        }
+      }
+
+      async function handleNormalScan(formData) {
+        const response = await fetch('imap-scan.php', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        imapData = data;
+        currentData = data;
+        localStorage.setItem('imapTreeData', JSON.stringify(data));
+        showVisualization();
+      }
+
+      async function handleProgressiveScan(formData) {
+        // Schritt 1: Initialisierung
+        updateLoadingText('Verbindung wird aufgebaut...');
+        
+        formData.append('action', 'init');
+        const initResponse = await fetch('imap-scan-progressive.php', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!initResponse.ok) {
+          throw new Error(`HTTP ${initResponse.status}: ${initResponse.statusText}`);
+        }
+
+        const initData = await initResponse.json();
+        
+        if (initData.error) {
+          throw new Error(initData.error);
+        }
+
+        // Schritt 2: Ordner scannen
+        showProgressBar();
+        updateLoadingText('Ordner werden analysiert...');
+        
+        const results = [];
+        const cacheKey = initData.cacheKey;
+        
+        for (let i = 0; i < initData.totalFolders; i++) {
+          const folderFormData = new FormData();
+          folderFormData.append('server', localStorage.getItem('server'));
+          folderFormData.append('port', localStorage.getItem('port'));
+          folderFormData.append('user', localStorage.getItem('user'));
+          folderFormData.append('pass', localStorage.getItem('pass'));
+          folderFormData.append('ssl', localStorage.getItem('ssl'));
+          folderFormData.append('action', 'scan');
+          folderFormData.append('cacheKey', cacheKey);
+          folderFormData.append('folderIndex', i.toString());
+          
+          const scanResponse = await fetch('imap-scan-progressive.php', {
+            method: 'POST',
+            body: folderFormData
+          });
+
+          if (!scanResponse.ok) {
+            console.warn(`Fehler beim Scannen von Ordner ${i}: HTTP ${scanResponse.status}`);
+            continue;
+          }
+
+          const scanData = await scanResponse.json();
+          
+          if (scanData.error) {
+            console.warn(`Fehler beim Scannen von Ordner ${i}: ${scanData.error}`);
+            continue;
+          }
+
+          // Fortschritt aktualisieren
+          updateProgress(scanData.progress.percent, 
+            `${scanData.progress.current}/${scanData.progress.total} - ${scanData.folder.name}`);
+          
+          results.push(scanData.folder);
+          
+          // Kurze Pause zwischen Requests
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        // Schritt 3: Finalisierung
+        updateLoadingText('Ergebnisse werden zusammengefasst...');
+        
+        const finalizeFormData = new FormData();
+        finalizeFormData.append('server', localStorage.getItem('server'));
+        finalizeFormData.append('port', localStorage.getItem('port'));
+        finalizeFormData.append('user', localStorage.getItem('user'));
+        finalizeFormData.append('pass', localStorage.getItem('pass'));
+        finalizeFormData.append('ssl', localStorage.getItem('ssl'));
+        finalizeFormData.append('action', 'finalize');
+        finalizeFormData.append('cacheKey', cacheKey);
+        
+        const finalResponse = await fetch('imap-scan-progressive.php', {
+          method: 'POST',
+          body: finalizeFormData
+        });
+
+        if (!finalResponse.ok) {
+          throw new Error(`HTTP ${finalResponse.status}: ${finalResponse.statusText}`);
+        }
+
+        const finalData = await finalResponse.json();
+        
+        if (finalData.error) {
+          throw new Error(finalData.error);
+        }
+
+        imapData = finalData;
+        currentData = finalData;
+        localStorage.setItem('imapTreeData', JSON.stringify(finalData));
+        showVisualization();
+      }
+
+      function updateLoadingText(text) {
+        const loadingText = document.getElementById('loadingText');
+        if (loadingText) {
+          loadingText.textContent = text;
+        }
+      }
+
+      function showProgressBar() {
+        const progressContainer = document.getElementById('progressContainer');
+        if (progressContainer) {
+          progressContainer.style.display = 'block';
+        }
+      }
+
+      function updateProgress(percent, details) {
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const progressDetails = document.getElementById('progressDetails');
+        
+        if (progressFill) {
+          progressFill.style.width = percent + '%';
+        }
+        
+        if (progressText) {
+          progressText.textContent = `${percent}% - Analyse läuft...`;
+        }
+        
+        if (progressDetails && details) {
+          progressDetails.textContent = `Aktueller Ordner: ${details}`;
         }
       }
 
@@ -766,6 +953,17 @@
         document.getElementById('loginSection').style.display = 'none';
         document.getElementById('loadingSection').classList.add('active');
         document.getElementById('visualizationSection').classList.remove('active');
+        
+        // Fortschrittsanzeige zurücksetzen
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const progressDetails = document.getElementById('progressDetails');
+        
+        if (progressContainer) progressContainer.style.display = 'none';
+        if (progressFill) progressFill.style.width = '0%';
+        if (progressText) progressText.textContent = '0% - Initialisierung...';
+        if (progressDetails) progressDetails.textContent = 'Bitte haben Sie Geduld. Große Postfächer werden schrittweise analysiert.';
       }
 
       function showVisualization() {
