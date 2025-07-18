@@ -69,17 +69,12 @@ if ($getAttachments) {
                 }
             }
             if ($isAttachment) {
-                $attachmentBody = imap_fetchbody($inbox, $uid, $i + 1, FT_UID);
-                // Base64 oder Quoted-Printable dekodieren
-                if ($part->encoding == 3) { // BASE64
-                    $attachmentBody = base64_decode($attachmentBody);
-                } elseif ($part->encoding == 4) { // QUOTED-PRINTABLE
-                    $attachmentBody = quoted_printable_decode($attachmentBody);
-                }
                 $attachments[] = [
                     'filename' => $filename,
-                    'size' => strlen($attachmentBody),
-                    'data' => base64_encode($attachmentBody)
+                    'size' => isset($part->bytes) ? $part->bytes : null,
+                    'partNum' => $i + 1,
+                    'uid' => $uid,
+                    'folder' => $folder
                 ];
             }
         }

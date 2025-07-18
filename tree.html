@@ -392,9 +392,22 @@
           };
 
           // Beispiel für die Anzeige im Popup:
-          if (mail.attachments && mail.attachments.length > 0) {
-            mail.attachments.forEach((att) => {
-              popup.innerHTML += `<a download="${att.filename}" href="data:application/octet-stream;base64,${att.data}">${att.filename} (${att.size} Bytes)</a><br>`;
+          if (data.attachments && data.attachments.length > 0) {
+            popup.innerHTML += "<h3>Anhänge:</h3>";
+            data.attachments.forEach((att) => {
+              // Zugangsdaten ggf. aus localStorage holen
+              const params = new URLSearchParams({
+                server: localStorage.getItem("server"),
+                port: localStorage.getItem("port"),
+                user: localStorage.getItem("user"),
+                pass: localStorage.getItem("pass"),
+                ssl: localStorage.getItem("ssl"),
+                folder: att.folder,
+                uid: att.uid,
+                partNum: att.partNum,
+                filename: att.filename,
+              });
+              popup.innerHTML += `<a href="imap-download.php?${params.toString()}" target="_blank">${att.filename} (${att.size || "?"} Bytes)</a><br>`;
             });
           }
         });
