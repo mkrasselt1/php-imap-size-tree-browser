@@ -162,13 +162,7 @@ if ($action === 'init') {
     ], JSON_UNESCAPED_UNICODE);
 
 } elseif ($action === 'extended-scan') {
-    // Schritt 2b: Erweiterten Scan für spezifischen Ordner
-    if (!$cacheKey) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Cache-Key fehlt']);
-        exit;
-    }
-
+    // Schritt 2b: Erweiterten Scan für spezifischen Ordner (braucht keinen cacheKey)
     $folderFullPath = $_POST['folderFullPath'] ?? '';
     $startIndex = (int)($_POST['startIndex'] ?? 0);
     $batchSize = (int)($_POST['batchSize'] ?? 500);
