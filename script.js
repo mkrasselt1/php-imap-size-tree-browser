@@ -1221,22 +1221,25 @@ async function extendedScanFolder(folderPath) {
   try {
     showLoading();
     updateLoadingText('Erweiterte Analyse wird gestartet...');
-    
+
     const formData = new FormData();
-    formData.append('server', localStorage.getItem('server'));
-    formData.append('port', localStorage.getItem('port'));
-    formData.append('user', localStorage.getItem('user'));
-    formData.append('pass', localStorage.getItem('pass'));
-    formData.append('ssl', localStorage.getItem('ssl'));
+    formData.append('server', getCredential('server'));
+    formData.append('port', getCredential('port'));
+    formData.append('user', getCredential('user'));
+    formData.append('pass', getCredential('pass'));
+    formData.append('ssl', getCredential('ssl'));
     formData.append('action', 'extended-scan');
     formData.append('folderFullPath', folderPath);
     formData.append('startIndex', '0');
     formData.append('batchSize', '1000');
-    
+    await appendSecurityTokens(formData);
+
     const response = await fetch('imap-scan-progressive.php', {
       method: 'POST',
       body: formData
     });
+
+    await fetchCsrfToken();
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -1316,24 +1319,21 @@ async function showMailModal(mail) {
 
 async function fetchMailContent(mail) {
   const formData = new FormData();
-  formData.append('server', localStorage.getItem('server'));
-  formData.append('port', localStorage.getItem('port'));
-  formData.append('user', localStorage.getItem('user'));
-  formData.append('pass', localStorage.getItem('pass'));
-  formData.append('ssl', localStorage.getItem('ssl'));
+  formData.append('server', getCredential('server'));
+  formData.append('port', getCredential('port'));
+  formData.append('user', getCredential('user'));
+  formData.append('pass', getCredential('pass'));
+  formData.append('ssl', getCredential('ssl'));
   formData.append('folder', mail.folderFull || mail.folder || '');
   formData.append('uid', mail.uid);
-  
-  console.log('Requesting mail details:', {
-    folder: mail.folderFull || mail.folder,
-    uid: mail.uid,
-    mailObject: mail
-  });
-  
+  await appendSecurityTokens(formData);
+
   const response = await fetch('imap-mail.php', {
     method: 'POST',
     body: formData
   });
+
+  await fetchCsrfToken();
   
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -1356,105 +1356,137 @@ async function fetchMailContent(mail) {
 }
 
 function createMailModal(mailContent, mail) {
-  // Remove existing modal
   if (currentModal) {
     currentModal.remove();
   }
-  
-  // Debug-Informationen für Inkonsistenz-Prüfung
-  console.log('Mail from scan:', {
-    name: mail.name,
-    uid: mail.uid,
-    folder: mail.folder,
-    folderFull: mail.folderFull,
-    rawSubject: mail.rawSubject
-  });
-  
-  console.log('Mail content from server:', {
-    subject: mailContent.subject,
-    debug: mailContent.debug
-  });
-  
-  // Warnung bei Inkonsistenz
-  if (mailContent.debug && mailContent.debug.rawSubject !== mail.rawSubject) {
-    console.warn('Subject mismatch detected:', {
-      scanSubject: mail.rawSubject,
-      serverSubject: mailContent.debug.rawSubject
-    });
-  }
-  
+
   const modal = document.createElement('div');
   modal.className = 'modal';
-  modal.innerHTML = `
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>📧 ${mailContent.subject || 'Kein Betreff'}</h2>
-        <button class="close-btn" onclick="closeModal()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="mail-detail">
-          <label>Von:</label>
-          <span>${mailContent.from || 'Unbekannt'}</span>
-        </div>
-        <div class="mail-detail">
-          <label>Datum:</label>
-          <span>${mailContent.date || 'Unbekannt'}</span>
-        </div>
-        <div class="mail-detail">
-          <label>Größe:</label>
-          <span>${formatSize(mail.size || 0)}</span>
-        </div>
-        <div class="mail-detail">
-          <label>UID:</label>
-          <span>${mail.uid} (Ordner: ${mail.folder})</span>
-        </div>
-        ${mailContent.debug && mailContent.debug.rawSubject !== mail.rawSubject ? `
-          <div class="mail-detail" style="background: #fff3cd; padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0;">
-            <label style="color: #856404;">⚠️ Debug-Info:</label>
-            <div style="font-size: 0.9rem; color: #856404;">
-              <div>Scan-Betreff: ${mail.rawSubject || 'leer'}</div>
-              <div>Server-Betreff: ${mailContent.debug.rawSubject || 'leer'}</div>
-            </div>
-          </div>
-        ` : ''}
-        ${mailContent.attachments && mailContent.attachments.length > 0 ? `
-          <div class="mail-detail">
-            <label>Anhänge:</label>
-            <div class="attachment-list">
-              ${mailContent.attachments.map(att => `
-                <div class="attachment-item">
-                  <div class="attachment-info">
-                    <div class="attachment-name">📎 ${att.filename}</div>
-                    <div class="attachment-size">${formatSize(att.size)}</div>
-                  </div>
-                  <button class="btn btn-secondary" onclick="downloadAttachment('${att.filename}', '${att.partNum}', '${mail.uid}', '${mail.folderFull || mail.folder}')">
-                    💾 Download
-                  </button>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
-        <div class="mail-detail">
-          <label>Nachricht:</label>
-          <div class="mail-content">${mailContent.html || mailContent.text || 'Kein Inhalt verfügbar'}</div>
-        </div>
-        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-          <button class="btn btn-danger" onclick="deleteMail('${mail.uid}', '${mail.folderFull || mail.folder}')">
-            🗑️ E-Mail löschen
-          </button>
-          <button class="btn btn-secondary" onclick="closeModal()">
-            Schließen
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-  
+
+  const content = document.createElement('div');
+  content.className = 'modal-content';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '\uD83D\uDCE7 ' + (mailContent.subject || 'Kein Betreff');
+  header.appendChild(h2);
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'close-btn';
+  closeBtn.textContent = '\u00D7';
+  closeBtn.addEventListener('click', closeModal);
+  header.appendChild(closeBtn);
+  content.appendChild(header);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'modal-body';
+
+  // Mail details
+  const details = [
+    ['Von', mailContent.from || 'Unbekannt'],
+    ['Datum', mailContent.date || 'Unbekannt'],
+    ['Gr\u00F6\u00DFe', formatSize(mail.size || 0)],
+    ['UID', (mail.uid || '') + ' (Ordner: ' + (mail.folder || '') + ')']
+  ];
+
+  details.forEach(([label, value]) => {
+    const detail = document.createElement('div');
+    detail.className = 'mail-detail';
+    const labelEl = document.createElement('label');
+    labelEl.textContent = label + ':';
+    detail.appendChild(labelEl);
+    const span = document.createElement('span');
+    span.textContent = value;
+    detail.appendChild(span);
+    body.appendChild(detail);
+  });
+
+  // Attachments
+  if (mailContent.attachments && mailContent.attachments.length > 0) {
+    const attDetail = document.createElement('div');
+    attDetail.className = 'mail-detail';
+    const attLabel = document.createElement('label');
+    attLabel.textContent = 'Anh\u00E4nge:';
+    attDetail.appendChild(attLabel);
+
+    const attList = document.createElement('div');
+    attList.className = 'attachment-list';
+
+    mailContent.attachments.forEach(att => {
+      const attItem = document.createElement('div');
+      attItem.className = 'attachment-item';
+
+      const attInfo = document.createElement('div');
+      attInfo.className = 'attachment-info';
+      const attName = document.createElement('div');
+      attName.className = 'attachment-name';
+      attName.textContent = '\uD83D\uDCCE ' + att.filename;
+      attInfo.appendChild(attName);
+      const attSize = document.createElement('div');
+      attSize.className = 'attachment-size';
+      attSize.textContent = formatSize(att.size);
+      attInfo.appendChild(attSize);
+      attItem.appendChild(attInfo);
+
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'btn btn-secondary';
+      dlBtn.textContent = '\uD83D\uDCBE Download';
+      dlBtn.addEventListener('click', () => downloadAttachment(att.filename, att.partNum, mail.uid, mail.folderFull || mail.folder));
+      attItem.appendChild(dlBtn);
+
+      attList.appendChild(attItem);
+    });
+
+    attDetail.appendChild(attList);
+    body.appendChild(attDetail);
+  }
+
+  // Mail body — use sandboxed iframe for HTML content
+  const bodyDetail = document.createElement('div');
+  bodyDetail.className = 'mail-detail';
+  const bodyLabel = document.createElement('label');
+  bodyLabel.textContent = 'Nachricht:';
+  bodyDetail.appendChild(bodyLabel);
+
+  if (mailContent.html) {
+    const iframe = document.createElement('iframe');
+    iframe.sandbox = 'allow-same-origin';
+    iframe.style.cssText = 'width: 100%; min-height: 200px; border: 1px solid #ccc; border-radius: 4px;';
+    iframe.srcdoc = mailContent.html;
+    bodyDetail.appendChild(iframe);
+  } else {
+    const pre = document.createElement('pre');
+    pre.style.whiteSpace = 'pre-wrap';
+    pre.textContent = mailContent.text || 'Kein Inhalt verf\u00FCgbar';
+    bodyDetail.appendChild(pre);
+  }
+  body.appendChild(bodyDetail);
+
+  // Action buttons
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; gap: 1rem; margin-top: 1.5rem;';
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'btn btn-danger';
+  deleteBtn.textContent = '\uD83D\uDDD1\uFE0F E-Mail l\u00F6schen';
+  deleteBtn.addEventListener('click', () => deleteMail(mail.uid, mail.folderFull || mail.folder));
+  actions.appendChild(deleteBtn);
+
+  const closeBtn2 = document.createElement('button');
+  closeBtn2.className = 'btn btn-secondary';
+  closeBtn2.textContent = 'Schlie\u00DFen';
+  closeBtn2.addEventListener('click', closeModal);
+  actions.appendChild(closeBtn2);
+
+  body.appendChild(actions);
+  content.appendChild(body);
+  modal.appendChild(content);
+
   document.body.appendChild(modal);
   currentModal = modal;
-  
-  // Close on outside click
+
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
       closeModal();
@@ -1470,23 +1502,27 @@ function closeModal() {
 }
 
 async function downloadAttachment(filename, partNum, uid, folder) {
+  const altchaToken = await solveAltchaChallenge();
+
   const form = document.createElement('form');
   form.method = 'POST';
   form.action = 'imap-download.php';
   form.target = '_blank';
-  
+
   const fields = {
-    server: localStorage.getItem('server'),
-    port: localStorage.getItem('port'),
-    user: localStorage.getItem('user'),
-    pass: localStorage.getItem('pass'),
-    ssl: localStorage.getItem('ssl'),
+    server: getCredential('server'),
+    port: getCredential('port'),
+    user: getCredential('user'),
+    pass: getCredential('pass'),
+    ssl: getCredential('ssl'),
     folder: folder,
     uid: uid,
     partNum: partNum,
-    filename: filename
+    filename: filename,
+    csrf_token: csrfToken,
+    altcha: altchaToken
   };
-  
+
   Object.entries(fields).forEach(([key, value]) => {
     const input = document.createElement('input');
     input.type = 'hidden';
@@ -1494,10 +1530,11 @@ async function downloadAttachment(filename, partNum, uid, folder) {
     input.value = value;
     form.appendChild(input);
   });
-  
+
   document.body.appendChild(form);
   form.submit();
   document.body.removeChild(form);
+  await fetchCsrfToken();
 }
 
 async function deleteMail(uid, folder) {
@@ -1507,18 +1544,21 @@ async function deleteMail(uid, folder) {
   
   try {
     const formData = new FormData();
-    formData.append('server', localStorage.getItem('server'));
-    formData.append('port', localStorage.getItem('port'));
-    formData.append('user', localStorage.getItem('user'));
-    formData.append('pass', localStorage.getItem('pass'));
-    formData.append('ssl', localStorage.getItem('ssl'));
+    formData.append('server', getCredential('server'));
+    formData.append('port', getCredential('port'));
+    formData.append('user', getCredential('user'));
+    formData.append('pass', getCredential('pass'));
+    formData.append('ssl', getCredential('ssl'));
     formData.append('folder', folder);
     formData.append('uid', uid);
-    
+    await appendSecurityTokens(formData);
+
     const response = await fetch('imap-delete.php', {
       method: 'POST',
       body: formData
     });
+
+    await fetchCsrfToken();
     
     const result = await response.json();
     
@@ -1541,11 +1581,12 @@ async function deleteMail(uid, folder) {
 async function refreshDataAfterDelete() {
   try {
     const refreshFormData = new FormData();
-    refreshFormData.append('server', localStorage.getItem('server'));
-    refreshFormData.append('port', localStorage.getItem('port'));
-    refreshFormData.append('user', localStorage.getItem('user'));
-    refreshFormData.append('pass', localStorage.getItem('pass'));
-    refreshFormData.append('ssl', localStorage.getItem('ssl'));
+    refreshFormData.append('server', getCredential('server'));
+    refreshFormData.append('port', getCredential('port'));
+    refreshFormData.append('user', getCredential('user'));
+    refreshFormData.append('pass', getCredential('pass'));
+    refreshFormData.append('ssl', getCredential('ssl'));
+    await appendSecurityTokens(refreshFormData);
     
     showLoading(); // Zeige den Loading-Bereich
     
@@ -1561,6 +1602,8 @@ async function refreshDataAfterDelete() {
         method: 'POST',
         body: refreshFormData
       });
+
+      await fetchCsrfToken();
       
       if (!refreshResponse.ok) {
         throw new Error(`HTTP ${refreshResponse.status}: ${refreshResponse.statusText}`);
@@ -1623,39 +1666,76 @@ function showExtendedScanOptions() {
   // Create modal
   const modal = document.createElement('div');
   modal.className = 'modal';
-  modal.innerHTML = `
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>🔍 Erweiterte Analyse</h2>
-        <button class="close-btn" onclick="closeExtendedScanModal()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p>Wählen Sie die Ordner aus, die vollständig analysiert werden sollen:</p>
-        <div class="folder-scan-list">
-          ${largeFolders.map(folder => `
-            <div class="folder-scan-item">
-              <div class="folder-info">
-                <div class="folder-name">${folder.name}</div>
-                <div class="folder-warning">⚠️ Möglicherweise unvollständig gescannt</div>
-              </div>
-              <button class="btn btn-sm btn-warning" onclick="extendedScanFolder('${folder.name}')">
-                🔍 Vollständig scannen
-              </button>
-            </div>
-          `).join('')}
-        </div>
-        <div style="margin-top: 1rem;">
-          <button class="btn btn-primary" onclick="extendedScanAll()">
-            🔍 Alle scannen
-          </button>
-          <button class="btn btn-secondary" onclick="closeExtendedScanModal()">
-            ❌ Abbrechen
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-  
+
+  const modalContent = document.createElement('div');
+  modalContent.className = 'modal-content';
+
+  const modalHeader = document.createElement('div');
+  modalHeader.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '\uD83D\uDD0D Erweiterte Analyse';
+  modalHeader.appendChild(h2);
+  const closeBtnEl = document.createElement('button');
+  closeBtnEl.className = 'close-btn';
+  closeBtnEl.textContent = '\u00D7';
+  closeBtnEl.addEventListener('click', closeExtendedScanModal);
+  modalHeader.appendChild(closeBtnEl);
+  modalContent.appendChild(modalHeader);
+
+  const modalBody = document.createElement('div');
+  modalBody.className = 'modal-body';
+
+  const introP = document.createElement('p');
+  introP.textContent = 'W\u00E4hlen Sie die Ordner aus, die vollst\u00E4ndig analysiert werden sollen:';
+  modalBody.appendChild(introP);
+
+  const folderList = document.createElement('div');
+  folderList.className = 'folder-scan-list';
+  largeFolders.forEach(folder => {
+    const item = document.createElement('div');
+    item.className = 'folder-scan-item';
+
+    const info = document.createElement('div');
+    info.className = 'folder-info';
+    const name = document.createElement('div');
+    name.className = 'folder-name';
+    name.textContent = folder.name;
+    info.appendChild(name);
+    const warning = document.createElement('div');
+    warning.className = 'folder-warning';
+    warning.textContent = '\u26A0\uFE0F M\u00F6glicherweise unvollst\u00E4ndig gescannt';
+    info.appendChild(warning);
+    item.appendChild(info);
+
+    const scanBtn = document.createElement('button');
+    scanBtn.className = 'btn btn-sm btn-warning';
+    scanBtn.textContent = '\uD83D\uDD0D Vollst\u00E4ndig scannen';
+    scanBtn.addEventListener('click', () => extendedScanFolder(folder.name));
+    item.appendChild(scanBtn);
+
+    folderList.appendChild(item);
+  });
+  modalBody.appendChild(folderList);
+
+  const btnRow = document.createElement('div');
+  btnRow.style.marginTop = '1rem';
+
+  const scanAllBtn = document.createElement('button');
+  scanAllBtn.className = 'btn btn-primary';
+  scanAllBtn.textContent = '\uD83D\uDD0D Alle scannen';
+  scanAllBtn.addEventListener('click', extendedScanAll);
+  btnRow.appendChild(scanAllBtn);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-secondary';
+  cancelBtn.textContent = '\u274C Abbrechen';
+  cancelBtn.addEventListener('click', closeExtendedScanModal);
+  btnRow.appendChild(cancelBtn);
+
+  modalBody.appendChild(btnRow);
+  modalContent.appendChild(modalBody);
+  modal.appendChild(modalContent);
+
   document.body.appendChild(modal);
   currentModal = modal;
 }
@@ -1773,15 +1853,25 @@ function setPreset(provider) {
 function showInfo(message) {
   const alert = document.createElement('div');
   alert.className = 'alert alert-info';
-  alert.innerHTML = `
-    <span class="alert-icon">ℹ️</span>
-    <span class="alert-text">${message}</span>
-    <button class="alert-close" onclick="this.parentElement.remove()">×</button>
-  `;
-  
+
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'alert-icon';
+  iconSpan.textContent = '\u2139\uFE0F';
+  alert.appendChild(iconSpan);
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'alert-text';
+  textSpan.textContent = message;
+  alert.appendChild(textSpan);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'alert-close';
+  closeBtn.textContent = '\u00D7';
+  closeBtn.addEventListener('click', () => alert.remove());
+  alert.appendChild(closeBtn);
+
   document.querySelector('.container').prepend(alert);
-  
-  // Auto-remove after 10 seconds
+
   setTimeout(() => {
     if (alert.parentElement) {
       alert.remove();
