@@ -5,6 +5,82 @@ let history = [];
 let selectedUid = null;
 let currentModal = null;
 let lastScanType = 'normal'; // Merken des verwendeten Scan-Typs
+let csrfToken = '';
+
+// Security: HTML-Escaping für User-Daten
+function escapeHtml(str) {
+  if (str == null) return '';
+  const div = document.createElement('div');
+  div.appendChild(document.createTextNode(String(str)));
+  return div.innerHTML;
+}
+
+// Credential helpers: password from sessionStorage, rest from localStorage
+function getCredential(key) {
+  if (key === 'pass') {
+    return sessionStorage.getItem('pass') || '';
+  }
+  return localStorage.getItem(key) || '';
+}
+
+// CSRF token management
+async function fetchCsrfToken() {
+  try {
+    const res = await fetch('csrf-token.php');
+    const data = await res.json();
+    csrfToken = data.token || '';
+  } catch (e) {
+    console.error('CSRF-Token konnte nicht geladen werden:', e);
+  }
+}
+
+// Append CSRF token to FormData
+function appendCsrfToken(formData) {
+  formData.append('csrf_token', csrfToken);
+}
+
+// ALTCHA challenge solver
+async function solveAltchaChallenge() {
+  try {
+    const res = await fetch('altcha-challenge.php');
+    const challenge = await res.json();
+
+    for (let n = 0; n <= challenge.maxnumber; n++) {
+      const hash = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(challenge.salt + n)
+      );
+      const hashHex = Array.from(new Uint8Array(hash))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      if (hashHex === challenge.challenge) {
+        return btoa(JSON.stringify({
+          algorithm: challenge.algorithm,
+          challenge: challenge.challenge,
+          number: n,
+          salt: challenge.salt,
+          signature: challenge.signature
+        }));
+      }
+    }
+    throw new Error('Challenge konnte nicht gelöst werden');
+  } catch (e) {
+    console.error('ALTCHA-Fehler:', e);
+    return '';
+  }
+}
+
+// Append ALTCHA token to FormData
+async function appendAltchaToken(formData) {
+  const token = await solveAltchaChallenge();
+  formData.append('altcha', token);
+}
+
+// Append both CSRF + ALTCHA to FormData
+async function appendSecurityTokens(formData) {
+  appendCsrfToken(formData);
+  await appendAltchaToken(formData);
+}
 
 // Demo data for testing
 const demoData = {
@@ -157,14 +233,14 @@ document.addEventListener('DOMContentLoaded', function() {
   loadFormData();
   checkExistingData();
   setupEventListeners();
-  
-  // Test: Prüfe ob der Submit-Button funktioniert
+  fetchCsrfToken();
+
   console.log('IMAP Analyse Tool geladen');
   console.log('Submit-Button gefunden:', document.getElementById('imapForm'));
 });
 
 function loadFormData() {
-  ['server', 'port', 'user', 'ssl', 'pass'].forEach(id => {
+  ['server', 'port', 'user', 'ssl'].forEach(id => {
     const element = document.getElementById(id);
     const value = localStorage.getItem(id);
     if (value && element) {
@@ -175,6 +251,12 @@ function loadFormData() {
       }
     }
   });
+  // Password from sessionStorage
+  const passEl = document.getElementById('pass');
+  const passVal = sessionStorage.getItem('pass');
+  if (passVal && passEl) {
+    passEl.value = passVal;
+  }
   
   // Lade den letzten Scan-Typ
   const savedScanType = localStorage.getItem('lastScanType');
@@ -184,13 +266,18 @@ function loadFormData() {
 }
 
 function saveFormData() {
-  ['server', 'port', 'user', 'ssl', 'pass'].forEach(id => {
+  ['server', 'port', 'user', 'ssl'].forEach(id => {
     const element = document.getElementById(id);
     if (element) {
       const value = element.type === 'checkbox' ? element.checked : element.value;
       localStorage.setItem(id, value);
     }
   });
+  // Password in sessionStorage (not localStorage)
+  const passEl = document.getElementById('pass');
+  if (passEl) {
+    sessionStorage.setItem('pass', passEl.value);
+  }
 }
 
 function checkExistingData() {
@@ -210,6 +297,21 @@ function checkExistingData() {
 function setupEventListeners() {
   document.getElementById('imapForm').addEventListener('submit', handleFormSubmit);
   window.addEventListener('resize', debounce(handleResize, 300));
+
+  // Data-attribute based event delegation (no inline onclick)
+  document.addEventListener('click', (e) => {
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'showHelp') showHelp();
+    else if (action === 'hideHelp') hideHelp();
+    else if (action === 'showLogin') showLogin();
+    else if (action === 'showExtendedScanOptions') showExtendedScanOptions();
+    else if (action === 'navigateBack') navigateBack();
+    else if (action === 'navigateToRoot') navigateToRoot();
+    else if (action === 'closeModal') closeModal();
+
+    const preset = e.target.closest('[data-preset]')?.dataset.preset;
+    if (preset) setPreset(preset);
+  });
 }
 
 async function handleFormSubmit(e) {
@@ -219,6 +321,13 @@ async function handleFormSubmit(e) {
   showLoading();
 
   const formData = new FormData(e.target);
+
+  // Get ALTCHA value from widget if present
+  const altchaWidget = document.querySelector('altcha-widget');
+  if (altchaWidget && altchaWidget.value) {
+    formData.append('altcha', altchaWidget.value);
+  }
+  appendCsrfToken(formData);
   
   try {
     // Check if demo mode is enabled
@@ -274,13 +383,15 @@ async function handleFormSubmit(e) {
 }
 
 async function handleNormalScan(formData) {
-  lastScanType = 'normal'; // Scan-Typ merken
-  localStorage.setItem('lastScanType', 'normal'); // Scan-Typ speichern
-  
+  lastScanType = 'normal';
+  localStorage.setItem('lastScanType', 'normal');
+
   const response = await fetch('imap-scan.php', {
     method: 'POST',
     body: formData
   });
+
+  await fetchCsrfToken();
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -299,17 +410,19 @@ async function handleNormalScan(formData) {
 }
 
 async function handleProgressiveScan(formData) {
-  lastScanType = 'progressive'; // Scan-Typ merken
-  localStorage.setItem('lastScanType', 'progressive'); // Scan-Typ speichern
-  
+  lastScanType = 'progressive';
+  localStorage.setItem('lastScanType', 'progressive');
+
   // Schritt 1: Initialisierung
   updateLoadingText('Verbindung wird aufgebaut...');
-  
+
   formData.append('action', 'init');
   const initResponse = await fetch('imap-scan-progressive.php', {
     method: 'POST',
     body: formData
   });
+
+  await fetchCsrfToken();
 
   if (!initResponse.ok) {
     throw new Error(`HTTP ${initResponse.status}: ${initResponse.statusText}`);
@@ -330,19 +443,22 @@ async function handleProgressiveScan(formData) {
   
   for (let i = 0; i < initData.totalFolders; i++) {
     const folderFormData = new FormData();
-    folderFormData.append('server', localStorage.getItem('server'));
-    folderFormData.append('port', localStorage.getItem('port'));
-    folderFormData.append('user', localStorage.getItem('user'));
-    folderFormData.append('pass', localStorage.getItem('pass'));
-    folderFormData.append('ssl', localStorage.getItem('ssl'));
+    folderFormData.append('server', getCredential('server'));
+    folderFormData.append('port', getCredential('port'));
+    folderFormData.append('user', getCredential('user'));
+    folderFormData.append('pass', getCredential('pass'));
+    folderFormData.append('ssl', getCredential('ssl'));
     folderFormData.append('action', 'scan');
     folderFormData.append('cacheKey', cacheKey);
     folderFormData.append('folderIndex', i.toString());
-    
+    await appendSecurityTokens(folderFormData);
+
     const scanResponse = await fetch('imap-scan-progressive.php', {
       method: 'POST',
       body: folderFormData
     });
+
+    await fetchCsrfToken();
 
     if (!scanResponse.ok) {
       console.warn(`Fehler beim Scannen von Ordner ${i}: HTTP ${scanResponse.status}`);
@@ -370,18 +486,21 @@ async function handleProgressiveScan(formData) {
   updateLoadingText('Ergebnisse werden zusammengefasst...');
   
   const finalizeFormData = new FormData();
-  finalizeFormData.append('server', localStorage.getItem('server'));
-  finalizeFormData.append('port', localStorage.getItem('port'));
-  finalizeFormData.append('user', localStorage.getItem('user'));
-  finalizeFormData.append('pass', localStorage.getItem('pass'));
-  finalizeFormData.append('ssl', localStorage.getItem('ssl'));
+  finalizeFormData.append('server', getCredential('server'));
+  finalizeFormData.append('port', getCredential('port'));
+  finalizeFormData.append('user', getCredential('user'));
+  finalizeFormData.append('pass', getCredential('pass'));
+  finalizeFormData.append('ssl', getCredential('ssl'));
   finalizeFormData.append('action', 'finalize');
   finalizeFormData.append('cacheKey', cacheKey);
-  
+  await appendSecurityTokens(finalizeFormData);
+
   const finalResponse = await fetch('imap-scan-progressive.php', {
     method: 'POST',
     body: finalizeFormData
   });
+
+  await fetchCsrfToken();
 
   if (!finalResponse.ok) {
     throw new Error(`HTTP ${finalResponse.status}: ${finalResponse.statusText}`);
@@ -548,21 +667,33 @@ function calculateStats(data) {
 function updateBreadcrumb() {
   const breadcrumb = document.getElementById('breadcrumb');
   const path = [];
-  
+
   let current = currentData;
   while (current && current !== imapData) {
     path.unshift(current);
-    current = current.parent; // Assuming parent reference exists
+    current = current.parent;
   }
-  
-  let html = '<span class="breadcrumb-item" onclick="navigateToRoot()">🏠 Root</span>';
+
+  breadcrumb.textContent = '';
+
+  const rootSpan = document.createElement('span');
+  rootSpan.className = 'breadcrumb-item';
+  rootSpan.textContent = '\uD83C\uDFE0 Root';
+  rootSpan.addEventListener('click', navigateToRoot);
+  breadcrumb.appendChild(rootSpan);
+
   path.forEach((item, index) => {
-    html += ` <span style="color: rgba(255,255,255,0.5);">›</span> `;
-    html += `<span class="breadcrumb-item ${index === path.length - 1 ? 'active' : ''}" 
-               onclick="navigateToLevel(${index})">${item.name}</span>`;
+    const sep = document.createElement('span');
+    sep.style.color = 'rgba(255,255,255,0.5)';
+    sep.textContent = ' \u203A ';
+    breadcrumb.appendChild(sep);
+
+    const span = document.createElement('span');
+    span.className = 'breadcrumb-item' + (index === path.length - 1 ? ' active' : '');
+    span.textContent = item.name;
+    span.addEventListener('click', () => navigateToLevel(index));
+    breadcrumb.appendChild(span);
   });
-  
-  breadcrumb.innerHTML = html;
 }
 
 function navigateToRoot() {
@@ -590,23 +721,34 @@ function renderSidebarItems(items, container, depth) {
     const element = document.createElement('div');
     element.className = 'sidebar-item';
     element.style.paddingLeft = `${depth * 20 + 16}px`;
-    
+
     if (item.children) {
       element.classList.add('folder');
     }
-    
-    const icon = item.type === 'mail' ? '📧' : 
-                 item.type === 'other-mails' ? '📦' : '📁';
-    
-    // Gekürzte und vollständige Namen vorbereiten
+
+    const icon = item.type === 'mail' ? '\uD83D\uDCE7' :
+                 item.type === 'other-mails' ? '\uD83D\uDCE6' : '\uD83D\uDCC1';
+
     const shortName = item.type === 'mail' ? truncateText(item.name, 25) : item.name;
-    const fullName = item.name;
-    
-    element.innerHTML = `
-      <span class="item-text" title="${fullName}">${icon} ${shortName}</span>
-      <span style="color: #666; font-size: 0.9rem;">${formatSize(item.size || item.childrenTotalSize || 0)}</span>
-      ${item.children && item.children.length > 0 ? '<span class="sidebar-toggle">▶</span>' : ''}
-    `;
+
+    // Build with DOM API (no innerHTML with user data)
+    const textSpan = document.createElement('span');
+    textSpan.className = 'item-text';
+    textSpan.title = item.name;
+    textSpan.textContent = `${icon} ${shortName}`;
+    element.appendChild(textSpan);
+
+    const sizeSpan = document.createElement('span');
+    sizeSpan.style.cssText = 'color: #666; font-size: 0.9rem;';
+    sizeSpan.textContent = formatSize(item.size || item.childrenTotalSize || 0);
+    element.appendChild(sizeSpan);
+
+    if (item.children && item.children.length > 0) {
+      const toggleSpan = document.createElement('span');
+      toggleSpan.className = 'sidebar-toggle';
+      toggleSpan.textContent = '\u25B6';
+      element.appendChild(toggleSpan);
+    }
     
     element.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1004,33 +1146,75 @@ function highlightSelectedItem() {
 
 function showItemInfo(item) {
   const infoPanel = document.getElementById('infoPanel');
-  let html = `<h3>📄 ${item.name}</h3>`;
-  html += `<p><strong>Größe:</strong> ${formatSize(item.size || 0)}</p>`;
-  
+  infoPanel.textContent = '';
+
+  const h3 = document.createElement('h3');
+  h3.textContent = '\uD83D\uDCC4 ' + (item.name || '');
+  infoPanel.appendChild(h3);
+
+  const sizeP = document.createElement('p');
+  sizeP.innerHTML = '<strong>Gr\u00F6\u00DFe:</strong> ';
+  sizeP.appendChild(document.createTextNode(formatSize(item.size || 0)));
+  infoPanel.appendChild(sizeP);
+
   if (item.type === 'mail') {
-    html += `<p><strong>Von:</strong> ${item.from || 'Unbekannt'}</p>`;
-    html += `<p><strong>Datum:</strong> ${item.date || 'Unbekannt'}</p>`;
-    html += `<p><strong>UID:</strong> ${item.uid || 'Unbekannt'}</p>`;
+    const fromP = document.createElement('p');
+    fromP.innerHTML = '<strong>Von:</strong> ';
+    fromP.appendChild(document.createTextNode(item.from || 'Unbekannt'));
+    infoPanel.appendChild(fromP);
+
+    const dateP = document.createElement('p');
+    dateP.innerHTML = '<strong>Datum:</strong> ';
+    dateP.appendChild(document.createTextNode(item.date || 'Unbekannt'));
+    infoPanel.appendChild(dateP);
+
+    const uidP = document.createElement('p');
+    uidP.innerHTML = '<strong>UID:</strong> ';
+    uidP.appendChild(document.createTextNode(item.uid || 'Unbekannt'));
+    infoPanel.appendChild(uidP);
   } else if (item.type === 'other-mails') {
-    html += `<p><strong>Typ:</strong> Zusammengefasste E-Mails</p>`;
-    html += `<p><strong>Anzahl:</strong> ${item.count || 'Unbekannt'}</p>`;
-    
-    // Warnung für nicht gescannte Mails
+    const typeP = document.createElement('p');
+    typeP.innerHTML = '<strong>Typ:</strong> Zusammengefasste E-Mails';
+    infoPanel.appendChild(typeP);
+
+    const countP = document.createElement('p');
+    countP.innerHTML = '<strong>Anzahl:</strong> ';
+    countP.appendChild(document.createTextNode(item.count || 'Unbekannt'));
+    infoPanel.appendChild(countP);
+
     if (item.warning && item.details) {
-      html += `<div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 0.75rem; margin: 1rem 0;">`;
-      html += `<p style="margin: 0; color: #856404;"><strong>⚠️ Hinweis:</strong></p>`;
-      html += `<p style="margin: 0.5rem 0 0 0; color: #856404; font-size: 0.9rem;">${item.details}</p>`;
-      html += `<button class="btn btn-warning" onclick="extendedScanFolder('${item.folderFull}')" style="margin-top: 0.5rem;">`;
-      html += `🔍 Vollständigen Scan starten</button>`;
-      html += `</div>`;
+      const warningDiv = document.createElement('div');
+      warningDiv.style.cssText = 'background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 0.75rem; margin: 1rem 0;';
+
+      const warningTitle = document.createElement('p');
+      warningTitle.style.cssText = 'margin: 0; color: #856404;';
+      warningTitle.innerHTML = '<strong>\u26A0\uFE0F Hinweis:</strong>';
+      warningDiv.appendChild(warningTitle);
+
+      const warningText = document.createElement('p');
+      warningText.style.cssText = 'margin: 0.5rem 0 0 0; color: #856404; font-size: 0.9rem;';
+      warningText.textContent = item.details;
+      warningDiv.appendChild(warningText);
+
+      const scanBtn = document.createElement('button');
+      scanBtn.className = 'btn btn-warning';
+      scanBtn.style.marginTop = '0.5rem';
+      scanBtn.textContent = '\uD83D\uDD0D Vollst\u00E4ndigen Scan starten';
+      scanBtn.addEventListener('click', () => extendedScanFolder(item.folderFull));
+      warningDiv.appendChild(scanBtn);
+
+      infoPanel.appendChild(warningDiv);
     }
   }
-  
+
   if (history.length > 0) {
-    html += `<button class="btn btn-secondary" onclick="navigateBack()" style="margin-top: 1rem;">⬅️ Zurück</button>`;
+    const backBtn = document.createElement('button');
+    backBtn.className = 'btn btn-secondary';
+    backBtn.style.marginTop = '1rem';
+    backBtn.textContent = '\u2B05\uFE0F Zur\u00FCck';
+    backBtn.setAttribute('data-action', 'navigateBack');
+    infoPanel.appendChild(backBtn);
   }
-  
-  infoPanel.innerHTML = html;
 }
 
 async function extendedScanFolder(folderPath) {

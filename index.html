@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <title>IMAP Analyse</title>
+    <script async defer src="https://cdn.jsdelivr.net/npm/altcha/dist/altcha.min.js" type="module"></script>
   </head>
   <body>
     <h1>IMAP-Konto analysieren</h1>
@@ -31,43 +32,59 @@
         >Passwort:
         <input type="password" id="pass" name="pass" required /></label
       ><br />
+      <altcha-widget challengeurl="altcha-challenge.php" style="margin: 1rem 0;"></altcha-widget>
       <button type="submit">Analysieren</button>
     </form>
 
     <pre id="output"></pre>
 
     <script>
+      let csrfToken = '';
+
+      async function fetchCsrfToken() {
+        try {
+          const res = await fetch('csrf-token.php');
+          const data = await res.json();
+          csrfToken = data.token || '';
+        } catch (e) {
+          console.error('CSRF-Token konnte nicht geladen werden:', e);
+        }
+      }
+
       const form = document.getElementById("imapForm");
       const output = document.getElementById("output");
 
-      // Felder mit LocalStorage vorbelegen
-      ["server", "port", "user", "ssl", "pass"].forEach((id) => {
+      // Felder mit Storage vorbelegen
+      ["server", "port", "user", "ssl"].forEach((id) => {
         const el = document.getElementById(id);
         if (localStorage.getItem(id)) {
           el.value = localStorage.getItem(id);
-          console.debug(
-            `[LocalStorage] Feld "${id}" mit Wert "${el.value}" vorbelegt.`
-          );
         }
       });
+      // Passwort aus sessionStorage
+      const savedPass = sessionStorage.getItem("pass");
+      if (savedPass) {
+        document.getElementById("pass").value = savedPass;
+      }
+
+      // CSRF-Token beim Laden holen
+      fetchCsrfToken();
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        console.debug("Formular wurde abgeschickt.");
 
-        // Speichern
-        ["server", "port", "user", "ssl", "pass"].forEach((id) => {
+        // Speichern (Passwort nur in sessionStorage)
+        ["server", "port", "user", "ssl"].forEach((id) => {
           localStorage.setItem(id, document.getElementById(id).value);
-          console.debug(
-            `[LocalStorage] Feld "${id}" mit Wert "${
-              document.getElementById(id).value
-            }" gespeichert.`
-          );
         });
+        sessionStorage.setItem("pass", document.getElementById("pass").value);
 
         const formData = new FormData(form);
-        console.log(...formData);
-        console.debug("Formulardaten:", Object.fromEntries(formData.entries()));
+
+        // CSRF-Token anhängen
+        if (csrfToken) {
+          formData.append('csrf_token', csrfToken);
+        }
 
         output.textContent = "Verbindung wird aufgebaut...";
 
@@ -76,19 +93,24 @@
             method: "POST",
             body: formData,
           });
-          console.debug("Antwort von imap-scan.php erhalten:", res);
 
           const json = await res.json();
-          console.debug("JSON-Antwort:", json);
 
-          localStorage.setItem("imapTreeData", JSON.stringify(json)); // Daten speichern
-          window.location.href = "tree.html"; // Weiterleitung zur Visualisierung
+          if (json.error) {
+            output.textContent = "Fehler: " + json.error;
+            // Token erneuern nach Fehler
+            await fetchCsrfToken();
+            return;
+          }
+
+          localStorage.setItem("imapTreeData", JSON.stringify(json));
+          window.location.href = "tree.html";
         } catch (err) {
           console.error("Fehler beim Abrufen der IMAP-Daten:", err);
           output.textContent = "Fehler: " + err;
+          // Token erneuern nach Fehler
+          await fetchCsrfToken();
         }
-
-        // später: window.location.href = 'tree.html'; und Übergabe über localStorage/sessionStorage
       });
     </script>
   </body>

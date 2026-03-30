@@ -5,15 +5,22 @@ ini_set('memory_limit', '512M');
 
 header('Content-Type: application/json');
 
+require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/validate.php';
+require_once __DIR__ . '/altcha.php';
+
+csrf_enforce();
+altcha_enforce();
+
 // Hilfsfunktion für robuste UTF-8 Dekodierung
 function safe_imap_utf8($text) {
     if (empty($text)) return $text;
-    
+
     $decoded = @imap_utf8($text);
     if ($decoded !== false && !empty(trim($decoded))) {
         return $decoded;
     }
-    
+
     // Fallback: Versuche manuelle Dekodierung
     if (function_exists('mb_decode_mimeheader')) {
         $decoded = @mb_decode_mimeheader($text);
@@ -21,26 +28,24 @@ function safe_imap_utf8($text) {
             return $decoded;
         }
     }
-    
+
     // Letzte Hoffnung: Original-Text zurückgeben
     return $text;
 }
 
-$server = $_POST['server'] ?? '';
-$port   = $_POST['port'] ?? '993';
-$user   = $_POST['user'] ?? '';
-$pass   = $_POST['pass'] ?? '';
-$ssl = in_array(strtolower($_POST['ssl'] ?? 'false'), ['true', 'on'], true);
+$params = extract_imap_params();
+$mailbox = $params['mailbox'];
+$user = $params['user'];
+$pass = $params['pass'];
+
 $folder = $_POST['folder'] ?? '';
 $uid    = $_POST['uid'] ?? '';
 
-if (!$server || !$user || !$pass || !$folder || !$uid) {
+if (!$folder || !$uid) {
     http_response_code(400);
     echo json_encode(['error' => 'Fehlende Parameter']);
     exit;
 }
-
-$mailbox = "{" . $server . ":" . $port . ($ssl ? "/ssl" : "") . "}";
 
 // Set IMAP timeout to fail faster on wrong credentials
 imap_timeout(IMAP_OPENTIMEOUT, 10);
@@ -53,10 +58,10 @@ $inbox = @imap_open($mailbox, $user, $pass);
 if (!$inbox) {
     $error = imap_last_error();
     echo json_encode([
-        'error' => 'IMAP-Verbindung fehlgeschlagen', 
+        'error' => 'IMAP-Verbindung fehlgeschlagen',
         'details' => $error,
-        'message' => strpos($error, 'AUTHENTICATE') !== false || strpos($error, 'LOGIN') !== false 
-            ? 'Benutzername oder Passwort falsch' 
+        'message' => strpos($error, 'AUTHENTICATE') !== false || strpos($error, 'LOGIN') !== false
+            ? 'Benutzername oder Passwort falsch'
             : 'Verbindung zum Server fehlgeschlagen'
     ]);
     exit;
@@ -79,15 +84,15 @@ $header = @imap_headerinfo($inbox, $uid, FT_UID);
 if (!$header) {
     // Versuche mit Message-Number statt UID
     $msgno = imap_msgno($inbox, $uid);
-    if ($msgno) {
+    if ($msgno !== false && $msgno > 0) {
         $header = @imap_headerinfo($inbox, $msgno);
     }
-    
+
     if (!$header) {
         // Noch mehr Debug-Informationen
         $check = imap_check($inbox);
         $folderStatus = $check ? "Ordner: {$check->Mailbox}, Mails: {$check->Nmsgs}" : "Ordner-Status unbekannt";
-        
+
         // Versuche alle UIDs in diesem Ordner zu listen
         $allUids = [];
         if ($check && $check->Nmsgs > 0) {
@@ -96,7 +101,7 @@ if (!$header) {
                 $allUids[] = $msg->uid;
             }
         }
-        
+
         echo json_encode([
             'error' => 'E-Mail nicht gefunden',
             'details' => 'Die angegebene UID existiert nicht oder ist ungültig',
@@ -117,14 +122,14 @@ if (!$header) {
 $from = '';
 if (isset($header->fromaddress)) {
     $from = safe_imap_utf8($header->fromaddress);
-} elseif (isset($header->from)) {
+} elseif (isset($header->from) && isset($header->from[0])) {
     $from = safe_imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
 }
 
 $to = '';
 if (isset($header->toaddress)) {
     $to = safe_imap_utf8($header->toaddress);
-} elseif (isset($header->to)) {
+} elseif (isset($header->to) && isset($header->to[0])) {
     $to = safe_imap_utf8($header->to[0]->mailbox . '@' . $header->to[0]->host);
 }
 
@@ -240,6 +245,8 @@ if (isset($structure->parts) && count($structure->parts)) {
     }
 }
 
+imap_close($inbox);
+
 echo json_encode([
     'subject' => $subject,
     'from' => $from,
@@ -256,5 +263,3 @@ echo json_encode([
         'headerDate' => $header->date ?? ''
     ]
 ], JSON_UNESCAPED_UNICODE);
-
-imap_close($inbox);

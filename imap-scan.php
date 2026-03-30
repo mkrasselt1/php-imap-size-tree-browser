@@ -5,15 +5,22 @@ ini_set('memory_limit', '512M');
 
 header('Content-Type: application/json');
 
+require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/validate.php';
+require_once __DIR__ . '/altcha.php';
+
+csrf_enforce();
+altcha_enforce();
+
 // Hilfsfunktion für robuste UTF-8 Dekodierung
 function safe_imap_utf8($text) {
     if (empty($text)) return $text;
-    
+
     $decoded = @imap_utf8($text);
     if ($decoded !== false && !empty(trim($decoded))) {
         return $decoded;
     }
-    
+
     // Fallback: Versuche manuelle Dekodierung
     if (function_exists('mb_decode_mimeheader')) {
         $decoded = @mb_decode_mimeheader($text);
@@ -21,24 +28,15 @@ function safe_imap_utf8($text) {
             return $decoded;
         }
     }
-    
+
     // Letzte Hoffnung: Original-Text zurückgeben
     return $text;
 }
 
-$server = $_POST['server'] ?? '';
-$port   = $_POST['port'] ?? '993';
-$user   = $_POST['user'] ?? '';
-$pass   = $_POST['pass'] ?? '';
-$ssl = in_array(strtolower($_POST['ssl'] ?? 'false'), ['true', 'on'], true);
-
-if (!$server || !$user || !$pass) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Fehlende Zugangsdaten']);
-    exit;
-}
-
-$mailbox = "{" . $server . ":" . $port . ($ssl ? "/ssl" : "") . "}";
+$params = extract_imap_params();
+$mailbox = $params['mailbox'];
+$user = $params['user'];
+$pass = $params['pass'];
 
 $inbox = @imap_open($mailbox, $user, $pass);
 if (!$inbox) {
@@ -64,7 +62,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         $parts = explode($delimiter, $shortName);
         $shortName = end($parts);
     }
-    
+
     // Ordnername korrekt dekodieren für Umlaute
     $shortName = safe_imap_utf8($shortName);
 
@@ -93,7 +91,7 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
                 'folder' => $folderFull,
                 'type' => 'mail',
                 'folderFull' => $folderFull,
-                'isTrash' => strpos(strtolower($folderFull), 'trash') !== false || 
+                'isTrash' => strpos(strtolower($folderFull), 'trash') !== false ||
                             strpos(strtolower($folderFull), 'deleted') !== false ||
                             strpos(strtolower($folderFull), 'papierkorb') !== false,
                 'rawSubject' => $overview[0]->subject ?? '',
