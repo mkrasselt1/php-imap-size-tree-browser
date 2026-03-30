@@ -1775,25 +1775,16 @@ function findLargeFolders(data) {
   return folders;
 }
 
-function extendedScanFolder(folderName) {
-  showInfo(`Erweiterte Analyse für "${folderName}" wird gestartet...`);
-  closeExtendedScanModal();
-  
-  // Here you would implement the actual extended scan
-  // For now, we'll just show a message
-  setTimeout(() => {
-    showInfo(`Erweiterte Analyse für "${folderName}" abgeschlossen. (Demo-Modus)`);
-  }, 2000);
-}
-
 function extendedScanAll() {
-  showInfo('Erweiterte Analyse für alle Ordner wird gestartet...');
+  if (!imapData || !imapData.children) return;
+  const largeFolders = findLargeFolders(imapData);
   closeExtendedScanModal();
-  
-  // Here you would implement the actual extended scan for all folders
-  setTimeout(() => {
-    showInfo('Erweiterte Analyse für alle Ordner abgeschlossen. (Demo-Modus)');
-  }, 3000);
+
+  (async () => {
+    for (const folder of largeFolders) {
+      await extendedScanFolder(folder.name);
+    }
+  })();
 }
 
 // Email provider presets
