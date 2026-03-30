@@ -2,116 +2,177 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <title>IMAP Analyse</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IMAP Speicher-Analyse</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <script async defer src="https://cdn.jsdelivr.net/npm/altcha/dist/altcha.min.js" type="module"></script>
   </head>
   <body>
-    <h1>IMAP-Konto analysieren</h1>
-    <form id="imapForm">
-      <label for="server"
-        >IMAP Server:
-        <input type="text" id="server" name="server" required /></label
-      ><br />
-      <label for="port"
-        >Port:
-        <input
-          type="number"
-          id="port"
-          name="port"
-          value="993"
-          required /></label
-      ><br />
-      <label for="ssl"
-        >SSL: <input type="checkbox" id="ssl" name="ssl" checked /></label
-      ><br />
-      <label for="user"
-        >Benutzername:
-        <input type="text" id="user" name="user" required /></label
-      ><br />
-      <label for="pass"
-        >Passwort:
-        <input type="password" id="pass" name="pass" required /></label
-      ><br />
-      <altcha-widget challengeurl="altcha-challenge.php" style="margin: 1rem 0;"></altcha-widget>
-      <button type="submit">Analysieren</button>
-    </form>
+    <div class="container">
+      <div class="header">
+        <h1>IMAP Speicher-Analyse</h1>
+        <p>Analysieren Sie Ihren E-Mail-Speicher visuell und interaktiv</p>
+        <button class="btn btn-outline-light" data-action="showHelp" style="margin-top: 1rem;" title="Hilfe & Anleitung (Strg+H)">
+          Hilfe & Anleitung
+        </button>
+      </div>
 
-    <pre id="output"></pre>
+      <!-- Login Form -->
+      <div id="loginSection" class="card">
+        <h2 style="margin-bottom: 1.5rem; color: var(--primary-color);">
+          IMAP-Verbindung konfigurieren
+        </h2>
+        <form id="imapForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="server">IMAP Server</label>
+              <input type="text" id="server" name="server" class="form-control" required placeholder="z.B. imap.gmail.com" />
+            </div>
+            <div class="form-group">
+              <label for="port">Port</label>
+              <input type="number" id="port" name="port" class="form-control" value="993" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="user">Benutzername</label>
+              <input type="text" id="user" name="user" class="form-control" required placeholder="ihre.email@example.com" />
+            </div>
+            <div class="form-group">
+              <label for="pass">Passwort</label>
+              <input type="password" id="pass" name="pass" class="form-control" required placeholder="" />
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="ssl" name="ssl" checked />
+              <label for="ssl">SSL-Verschluesselung verwenden</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="demo" name="demo" />
+              <label for="demo">Demo-Modus (Beispieldaten verwenden)</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Schnellauswahl (Haeufige Anbieter)</label>
+            <div class="preset-buttons">
+              <button type="button" class="btn btn-secondary btn-sm" data-preset="gmail">Gmail</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-preset="outlook">Outlook/Hotmail</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-preset="yahoo">Yahoo Mail</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-preset="icloud">iCloud</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-preset="web.de">Web.de</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-preset="gmx">GMX</button>
+            </div>
+          </div>
+          <altcha-widget challengeurl="altcha-challenge.php" style="margin: 1rem 0;"></altcha-widget>
+          <button type="submit" class="btn btn-primary">
+            Analyse starten
+          </button>
+        </form>
+      </div>
 
-    <script>
-      let csrfToken = '';
+      <!-- Loading Section -->
+      <div id="loadingSection" class="loading">
+        <div class="spinner"></div>
+        <p id="loadingText">Verbindung wird aufgebaut und E-Mails analysiert...</p>
+        <div id="progressContainer" style="display: none;">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <p id="progressText">0% - Initialisierung...</p>
+          <p id="progressDetails" style="font-size: 0.9rem; color: #666; margin-top: 1rem;">
+            Bitte haben Sie Geduld. Grosse Postfaecher werden schrittweise analysiert.
+          </p>
+        </div>
+      </div>
 
-      async function fetchCsrfToken() {
-        try {
-          const res = await fetch('csrf-token.php');
-          const data = await res.json();
-          csrfToken = data.token || '';
-        } catch (e) {
-          console.error('CSRF-Token konnte nicht geladen werden:', e);
-        }
-      }
+      <!-- Visualization Section -->
+      <div id="visualizationSection" class="visualization">
+        <div class="viz-header">
+          <h2>Speicher-Visualisierung</h2>
+          <div class="breadcrumb" id="breadcrumb">
+            <!-- Breadcrumb wird dynamisch gefuellt -->
+          </div>
+          <div class="header-buttons">
+            <button class="btn btn-warning" data-action="showExtendedScanOptions" title="Erweiterte Analyse fuer grosse Ordner (Strg+E)">
+              Erweiterte Analyse
+            </button>
+            <button class="btn btn-secondary" data-action="showLogin" title="Neue Analyse starten (Strg+R)">
+              Neue Analyse
+            </button>
+          </div>
+        </div>
+        <div class="stats-grid" id="statsGrid">
+          <!-- Statistiken werden dynamisch gefuellt -->
+        </div>
+        <div class="viz-content">
+          <div class="sidebar" id="sidebar">
+            <!-- Ordnerbaum wird hier eingefuegt -->
+          </div>
+          <div class="chart-container" id="chartContainer">
+            <!-- Treemap wird hier eingefuegt -->
+          </div>
+        </div>
+        <div class="info-panel" id="infoPanel">
+          <h3>Informationen</h3>
+          <p>Klicken Sie auf ein Element, um Details anzuzeigen</p>
+        </div>
+      </div>
 
-      const form = document.getElementById("imapForm");
-      const output = document.getElementById("output");
+      <!-- Help Section -->
+      <div id="helpSection" class="card" style="display: none;">
+        <h2 style="margin-bottom: 1.5rem; color: var(--primary-color);">
+          Hilfe und Anleitung
+        </h2>
+        <div class="help-content">
+          <h3>Erste Schritte</h3>
+          <ol>
+            <li><strong>IMAP-Daten eingeben:</strong> Geben Sie Ihre IMAP-Server-Daten (Server, Port, Benutzername, Passwort) ein</li>
+            <li><strong>Analyse starten:</strong> Klicken Sie auf "Analyse starten" um den Scan zu beginnen</li>
+            <li><strong>Scan-Typ waehlen:</strong> Fuer grosse Postfaecher wird der progressive Scan empfohlen</li>
+            <li><strong>Ergebnisse erkunden:</strong> Navigieren Sie durch die Treemap-Visualisierung</li>
+          </ol>
 
-      // Felder mit Storage vorbelegen
-      ["server", "port", "user", "ssl"].forEach((id) => {
-        const el = document.getElementById(id);
-        if (localStorage.getItem(id)) {
-          el.value = localStorage.getItem(id);
-        }
-      });
-      // Passwort aus sessionStorage
-      const savedPass = sessionStorage.getItem("pass");
-      if (savedPass) {
-        document.getElementById("pass").value = savedPass;
-      }
+          <h3>Funktionen</h3>
+          <ul>
+            <li><strong>Treemap-Visualisierung:</strong> Zeigt Ordner und E-Mails proportional zu ihrer Groesse an</li>
+            <li><strong>Progressiver Scan:</strong> Fuer grosse Postfaecher mit schrittweiser Verarbeitung</li>
+            <li><strong>Erweiterte Analyse:</strong> Vollstaendige Analyse fuer grosse Ordner (ueber 1000 E-Mails)</li>
+            <li><strong>Navigation:</strong> Klicken Sie auf Ordner um hineinzunavigieren</li>
+            <li><strong>E-Mail-Details:</strong> Klicken Sie auf E-Mails um Details anzuzeigen</li>
+          </ul>
 
-      // CSRF-Token beim Laden holen
-      fetchCsrfToken();
+          <h3>Scan-Optionen</h3>
+          <ul>
+            <li><strong>Normaler Scan:</strong> Schnell, aber bei grossen Postfaechern evtl. langsam</li>
+            <li><strong>Progressiver Scan:</strong> Schrittweise Verarbeitung mit Fortschrittsanzeige</li>
+            <li><strong>Erweiterte Analyse:</strong> Vollstaendige Analyse auch fuer sehr grosse Ordner</li>
+          </ul>
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+          <h3>Sicherheit</h3>
+          <ul>
+            <li>Alle Daten werden nur lokal verarbeitet</li>
+            <li>Ihre Login-Daten werden nicht dauerhaft gespeichert</li>
+            <li>Die Analyse erfolgt direkt ueber IMAP</li>
+            <li>CSRF-Schutz und ALTCHA Proof-of-Work verhindern Missbrauch</li>
+          </ul>
 
-        // Speichern (Passwort nur in sessionStorage)
-        ["server", "port", "user", "ssl"].forEach((id) => {
-          localStorage.setItem(id, document.getElementById(id).value);
-        });
-        sessionStorage.setItem("pass", document.getElementById("pass").value);
+          <h3>Tastaturkuerzel</h3>
+          <ul>
+            <li><strong>Strg/Cmd + H:</strong> Hilfe anzeigen</li>
+            <li><strong>Strg/Cmd + R:</strong> Neue Analyse starten</li>
+            <li><strong>Strg/Cmd + E:</strong> Erweiterte Analyse</li>
+            <li><strong>Escape:</strong> Modals schliessen oder zurueck</li>
+            <li><strong>Backspace:</strong> Zurueck in der Navigation</li>
+          </ul>
+        </div>
+        <button class="btn btn-secondary" data-action="hideHelp">Schliessen</button>
+      </div>
+    </div>
 
-        const formData = new FormData(form);
-
-        // CSRF-Token anhängen
-        if (csrfToken) {
-          formData.append('csrf_token', csrfToken);
-        }
-
-        output.textContent = "Verbindung wird aufgebaut...";
-
-        try {
-          const res = await fetch("imap-scan.php", {
-            method: "POST",
-            body: formData,
-          });
-
-          const json = await res.json();
-
-          if (json.error) {
-            output.textContent = "Fehler: " + json.error;
-            // Token erneuern nach Fehler
-            await fetchCsrfToken();
-            return;
-          }
-
-          localStorage.setItem("imapTreeData", JSON.stringify(json));
-          window.location.href = "tree.html";
-        } catch (err) {
-          console.error("Fehler beim Abrufen der IMAP-Daten:", err);
-          output.textContent = "Fehler: " + err;
-          // Token erneuern nach Fehler
-          await fetchCsrfToken();
-        }
-      });
-    </script>
+    <script src="script.js"></script>
   </body>
 </html>

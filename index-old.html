@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>IMAP Analyse</title>
+    <script async defer src="https://cdn.jsdelivr.net/npm/altcha/dist/altcha.min.js" type="module"></script>
+  </head>
+  <body>
+    <h1>IMAP-Konto analysieren</h1>
+    <form id="imapForm">
+      <label for="server"
+        >IMAP Server:
+        <input type="text" id="server" name="server" required /></label
+      ><br />
+      <label for="port"
+        >Port:
+        <input
+          type="number"
+          id="port"
+          name="port"
+          value="993"
+          required /></label
+      ><br />
+      <label for="ssl"
+        >SSL: <input type="checkbox" id="ssl" name="ssl" checked /></label
+      ><br />
+      <label for="user"
+        >Benutzername:
+        <input type="text" id="user" name="user" required /></label
+      ><br />
+      <label for="pass"
+        >Passwort:
+        <input type="password" id="pass" name="pass" required /></label
+      ><br />
+      <altcha-widget challengeurl="altcha-challenge.php" style="margin: 1rem 0;"></altcha-widget>
+      <button type="submit">Analysieren</button>
+    </form>
+
+    <pre id="output"></pre>
+
+    <script>
+      let csrfToken = '';
+
+      async function fetchCsrfToken() {
+        try {
+          const res = await fetch('csrf-token.php');
+          const data = await res.json();
+          csrfToken = data.token || '';
+        } catch (e) {
+          console.error('CSRF-Token konnte nicht geladen werden:', e);
+        }
+      }
+
+      const form = document.getElementById("imapForm");
+      const output = document.getElementById("output");
+
+      // Felder mit Storage vorbelegen
+      ["server", "port", "user", "ssl"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (localStorage.getItem(id)) {
+          el.value = localStorage.getItem(id);
+        }
+      });
+      // Passwort aus sessionStorage
+      const savedPass = sessionStorage.getItem("pass");
+      if (savedPass) {
+        document.getElementById("pass").value = savedPass;
+      }
+
+      // CSRF-Token beim Laden holen
+      fetchCsrfToken();
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        // Speichern (Passwort nur in sessionStorage)
+        ["server", "port", "user", "ssl"].forEach((id) => {
+          localStorage.setItem(id, document.getElementById(id).value);
+        });
+        sessionStorage.setItem("pass", document.getElementById("pass").value);
+
+        const formData = new FormData(form);
+
+        // CSRF-Token anhängen
+        if (csrfToken) {
+          formData.append('csrf_token', csrfToken);
+        }
+
+        output.textContent = "Verbindung wird aufgebaut...";
+
+        try {
+          const res = await fetch("imap-scan.php", {
+            method: "POST",
+            body: formData,
+          });
+
+          const json = await res.json();
+
+          if (json.error) {
+            output.textContent = "Fehler: " + json.error;
+            // Token erneuern nach Fehler
+            await fetchCsrfToken();
+            return;
+          }
+
+          localStorage.setItem("imapTreeData", JSON.stringify(json));
+          window.location.href = "tree.html";
+        } catch (err) {
+          console.error("Fehler beim Abrufen der IMAP-Daten:", err);
+          output.textContent = "Fehler: " + err;
+          // Token erneuern nach Fehler
+          await fetchCsrfToken();
+        }
+      });
+    </script>
+  </body>
+</html>
