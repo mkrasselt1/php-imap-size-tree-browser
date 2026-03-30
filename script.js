@@ -845,28 +845,26 @@ function renderTreemap() {
     .sum(d => d.size || 0)
     .sort((a, b) => b.value - a.value);
   
+  // Wähle Tiling-Algorithmus basierend auf Anzahl der Elemente und verfügbarem Platz
+  const leafCount = root.leaves().length;
+
   // Calculate responsive thresholds based on container size
   const containerArea = width * height;
   const avgItemSize = containerArea / leafCount;
-  
-  // Calculate dynamic thresholds based on available space
+
   // Minimum size for readable items: smaller containers need fewer items per algorithm
-  const minReadableArea = 100 * 50; // 5000 px²
-  const containerSizeFactor = Math.min(1.5, Math.max(0.5, containerArea / 500000)); // Scale factor based on container size
-  
+  const containerSizeFactor = Math.min(1.5, Math.max(0.5, containerArea / 500000));
+
   // Dynamic thresholds with container size consideration
   const baseSliceDiceThreshold = 8;
   const baseSquarifyThreshold = 40;
-  
+
   const optimalItemsForSliceDice = Math.floor(baseSliceDiceThreshold * containerSizeFactor);
   const optimalItemsForSquarify = Math.floor(baseSquarifyThreshold * containerSizeFactor);
-  
+
   // Ensure reasonable bounds with smoother transitions
   const minSliceDiceThreshold = Math.max(3, Math.min(20, optimalItemsForSliceDice));
   const minSquarifyThreshold = Math.max(minSliceDiceThreshold + 5, Math.min(150, optimalItemsForSquarify));
-  
-  // Wähle Tiling-Algorithmus basierend auf Anzahl der Elemente und verfügbarem Platz
-  const leafCount = root.leaves().length;
   let tileMethod;
   
   if (leafCount <= minSliceDiceThreshold) {
