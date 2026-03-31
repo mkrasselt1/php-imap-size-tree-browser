@@ -113,22 +113,9 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         }
     }
 
-    // Top 20 größte Mails einzeln, Rest als einen Block
+    // Alle Mails nach Größe sortieren — alle einzeln anzeigen
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $children = array_slice($mails, 0, 20);
-
-    $otherMails = array_slice($mails, 20);
-    if (count($otherMails) > 0) {
-        $otherSize = 0;
-        foreach ($otherMails as $m) { $otherSize += $m['size']; }
-        $children[] = [
-            'name' => count($otherMails) . ' weitere Mails (' . $shortName . ')',
-            'size' => $otherSize,
-            'type' => 'other-mails',
-            'count' => count($otherMails),
-            'folderFull' => $folderFull,
-        ];
-    }
+    $children = $mails;
 
     // Subfolder suchen, aber nur echte Unterordner
     $subfolders = imap_list($inbox, $mailbox, $shortName . $delimiter . '*');
