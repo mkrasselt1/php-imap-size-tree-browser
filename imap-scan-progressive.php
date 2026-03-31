@@ -16,12 +16,20 @@ altcha_enforce();
 function safe_imap_utf8($text) {
     if (empty($text)) return $text;
 
+    // IMAP Modified UTF-7 Ordnernamen dekodieren (z.B. "Entw&APw-rfe" -> "Entwürfe")
+    if (strpos($text, '&') !== false && strpos($text, '-') !== false) {
+        $decoded = @mb_convert_encoding($text, 'UTF-8', 'UTF7-IMAP');
+        if ($decoded !== false && !empty(trim($decoded))) {
+            return $decoded;
+        }
+    }
+
+    // MIME-Header dekodieren (z.B. "=?UTF-8?B?..." Subjects)
     $decoded = @imap_utf8($text);
     if ($decoded !== false && !empty(trim($decoded))) {
         return $decoded;
     }
 
-    // Fallback: Versuche manuelle Dekodierung
     if (function_exists('mb_decode_mimeheader')) {
         $decoded = @mb_decode_mimeheader($text);
         if ($decoded !== false && !empty(trim($decoded))) {
@@ -29,7 +37,6 @@ function safe_imap_utf8($text) {
         }
     }
 
-    // Letzte Hoffnung: Original-Text zurückgeben
     return $text;
 }
 
