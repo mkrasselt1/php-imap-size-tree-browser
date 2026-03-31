@@ -142,6 +142,12 @@ if ($action === 'init') {
 
     $cacheData = json_decode(file_get_contents($cacheFile), true);
 
+    if (!is_array($cacheData) || !isset($cacheData['folders'])) {
+        imap_close($inbox);
+        echo json_encode(['error' => 'Cache-Datei beschädigt. Bitte Scan neu starten.']);
+        exit;
+    }
+
     if ($folderIndex >= count($cacheData['folders'])) {
         imap_close($inbox);
         echo json_encode(['error' => 'Ungültiger Ordner-Index']);
@@ -254,6 +260,12 @@ if ($action === 'init') {
     }
 
     $cacheData = json_decode(file_get_contents($cacheFile), true);
+
+    if (!is_array($cacheData) || !isset($cacheData['results'])) {
+        imap_close($inbox);
+        echo json_encode(['error' => 'Cache-Datei beschädigt. Bitte Scan neu starten.']);
+        exit;
+    }
 
     // Hierarchie aufbauen
     $tree = buildFolderHierarchy($cacheData['results'], $cacheData['mailbox']);
