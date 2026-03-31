@@ -381,9 +381,29 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         ];
     }
 
-    // Alle Mails nach Größe sortieren — alle einzeln anzeigen
+    // Top 20 größte Mails einzeln, Rest als einen Block
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $children = array_merge($children, $mails);
+    $topMails = array_slice($mails, 0, 20);
+    $otherMails = array_slice($mails, 20);
+
+    foreach ($topMails as $mail) {
+        $children[] = $mail;
+    }
+
+    if (count($otherMails) > 0) {
+        $otherSize = 0;
+        foreach ($otherMails as $m) {
+            $otherSize += $m['size'];
+        }
+        $children[] = [
+            'name' => count($otherMails) . ' weitere Mails (' . $shortName . ')',
+            'size' => $otherSize,
+            'type' => 'other-mails',
+            'count' => count($otherMails),
+            'folderFull' => $folderFull,
+            'folder' => $shortName
+        ];
+    }
 
     // Wenn mehr Mails vorhanden sind, als verarbeitet wurden
     if ($check->Nmsgs > $maxMails) {
