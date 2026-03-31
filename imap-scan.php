@@ -106,27 +106,36 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         }
     }
 
-    // Die 10 größten Mails als eigene Knoten
+    // Die größten Mails als eigene Knoten
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $biggestMails = array_slice($mails, 0, 10);
+    $topCount = min(50, count($mails));
+    $biggestMails = array_slice($mails, 0, $topCount);
+    $otherMails = array_slice($mails, $topCount);
 
-    // Restliche Mails zusammenfassen
-    $otherMails = array_slice($mails, 10);
-    $otherSize = 0;
-    foreach ($otherMails as $mail) {
-        $otherSize += $mail['size'];
-    }
     $children = [];
     foreach ($biggestMails as $mail) {
         $children[] = $mail;
     }
-    if ($otherSize > 0) {
-        $children[] = [
-            'name' => 'Weitere Mails (' . $shortName . ')',
-            'size' => $otherSize,
-            'type' => 'other-mails',
-            'count' => count($otherMails)
-        ];
+
+    // Restliche Mails in Gruppen aufteilen statt einen riesigen Block
+    if (count($otherMails) > 0) {
+        $chunkSize = max(50, (int) ceil(count($otherMails) / 5));
+        $chunks = array_chunk($otherMails, $chunkSize);
+        foreach ($chunks as $idx => $chunk) {
+            $chunkSize = 0;
+            foreach ($chunk as $mail) {
+                $chunkSize += $mail['size'];
+            }
+            $label = count($chunks) > 1
+                ? 'Weitere Mails ' . ($idx + 1) . '/' . count($chunks) . ' (' . $shortName . ')'
+                : 'Weitere Mails (' . $shortName . ')';
+            $children[] = [
+                'name' => $label,
+                'size' => $chunkSize,
+                'type' => 'other-mails',
+                'count' => count($chunk)
+            ];
+        }
     }
 
     // Subfolder suchen, aber nur echte Unterordner

@@ -847,171 +847,131 @@ function renderTreemap() {
   
   const leafCount = root.leaves().length;
 
-  // Squarify mit goldenem Schnitt — erzeugt die kompaktesten, lesbarsten Rechtecke
+  const phi = (1 + Math.sqrt(5)) / 2;
   d3.treemap()
     .size([width, height])
-    .padding(3)
-    .paddingTop(20)
+    .paddingOuter(4)
+    .paddingTop(22)
+    .paddingInner(2)
     .round(true)
-    .tile(d3.treemapSquarify.ratio((1 + Math.sqrt(5)) / 2))
+    .tile(d3.treemapSquarify.ratio(phi))
     (root);
-  
+
   const svg = d3.select(container)
     .append('svg')
     .attr('width', width)
     .attr('height', height);
-  
+
   const baseColors = [
     '#e63946', '#457b9d', '#2a9d8f', '#f4a261',
     '#a8dadc', '#b7b7a4', '#ffb4a2', '#6d6875'
   ];
-  
-  // Parent folders
-  svg.selectAll('.parent-node')
-    .data(root.descendants().filter(d => d.depth === 1))
+
+  // Hilfsfunktion: Farbe eines Knotens basierend auf seinem Wurzel-Ordner
+  function nodeColor(d) {
+    if (d.data.warning) return '#fff3cd';
+    let rootChild = d;
+    while (rootChild.depth > 1) rootChild = rootChild.parent;
+    const idx = root.children ? root.children.indexOf(rootChild) : 0;
+    const baseColor = baseColors[Math.abs(idx) % baseColors.length];
+    const intensity = Math.min(d.depth * 0.12, 0.6);
+    return shadeColor(baseColor, intensity);
+  }
+
+  // Ordner-Hintergründe (alle inneren Knoten mit Kindern)
+  const folders = root.descendants().filter(d => d.children && d.depth >= 1);
+  svg.selectAll('.folder-bg')
+    .data(folders)
     .enter()
     .append('rect')
-    .attr('class', 'parent-node')
-    .attr('x', d => d.x0 - 2)
-    .attr('y', d => d.y0 - 2)
-    .attr('width', d => d.x1 - d.x0 + 4)
-    .attr('height', d => d.y1 - d.y0 + 4)
-    .attr('fill', 'rgba(255,255,255,0.1)')
-    .attr('stroke', 'rgba(51,51,51,0.3)')
-    .attr('stroke-width', 2)
-    .attr('rx', 6);
-  
-  // Parent labels
-  svg.selectAll('.parent-label')
-    .data(root.descendants().filter(d => d.depth === 1))
+    .attr('class', 'folder-bg')
+    .attr('x', d => d.x0)
+    .attr('y', d => d.y0)
+    .attr('width', d => Math.max(0, d.x1 - d.x0))
+    .attr('height', d => Math.max(0, d.y1 - d.y0))
+    .attr('fill', d => shadeColor(nodeColor(d), 0.4))
+    .attr('stroke', d => d.depth === 1 ? '#333' : 'rgba(0,0,0,0.15)')
+    .attr('stroke-width', d => d.depth === 1 ? 2 : 1)
+    .attr('rx', d => d.depth === 1 ? 6 : 3);
+
+  // Ordner-Labels
+  svg.selectAll('.folder-label')
+    .data(folders)
     .enter()
     .append('text')
-    .attr('class', 'parent-label')
+    .attr('class', 'folder-label')
     .attr('x', d => d.x0 + 6)
-    .attr('y', d => d.y0 + 16)
-    .attr('font-size', '12px')
+    .attr('y', d => d.y0 + 15)
+    .attr('font-size', d => d.depth === 1 ? '12px' : '10px')
     .attr('font-weight', 'bold')
     .attr('fill', '#333')
+    .style('pointer-events', 'none')
     .each(function(d) {
-      const element = d3.select(this);
-      const width = d.x1 - d.x0;
-      const height = d.y1 - d.y0;
-      
-      // Nur bei ausreichend großen Parent-Boxen Text anzeigen
-      if (width < 80 || height < 25) {
-        element.style('display', 'none');
-        return;
-      }
-      
-      // Maximale Textlänge basierend auf Boxbreite
-      const maxChars = Math.max(5, Math.floor((width - 20) / 8)); // ~8px pro Zeichen für Bold
-      const name = truncateText(d.data.name, maxChars);
-      
-      element.text(`📁 ${name}`)
-        .style('max-width', (width - 12) + 'px');
+      const el = d3.select(this);
+      const w = d.x1 - d.x0;
+      const h = d.y1 - d.y0;
+      if (w < 60 || h < 22) { el.style('display', 'none'); return; }
+      const maxChars = Math.max(4, Math.floor((w - 16) / 7));
+      const size = formatSize(d.value || 0);
+      el.text(`📁 ${truncateText(d.data.name, maxChars)} (${size})`);
     });
-  
-  // Leaf nodes
+
+  // Blätter (Mails + other-mails)
+  const leaves = root.leaves();
   const nodes = svg.selectAll('.node')
-    .data(root.leaves())
+    .data(leaves)
     .enter()
     .append('g')
     .attr('class', 'node')
     .attr('transform', d => `translate(${d.x0},${d.y0})`);
-  
+
   nodes.append('rect')
-    .attr('width', d => d.x1 - d.x0)
-    .attr('height', d => d.y1 - d.y0)
-    .attr('fill', d => {
-      // Warnung für nicht gescannte Mails
-      if (d.data.warning) {
-        return '#fff3cd';
-      }
-      
-      let rootChild = d;
-      while (rootChild.depth > 1) rootChild = rootChild.parent;
-      const idx = root.children.indexOf(rootChild);
-      const baseColor = baseColors[idx % baseColors.length];
-      const intensity = Math.min((d.depth - 1) * 0.15, 0.6);
-      return shadeColor(baseColor, intensity);
-    })
-    .attr('stroke', d => d.data.warning ? '#ffc107' : 'rgba(255,255,255,0.8)')
+    .attr('width', d => Math.max(0, d.x1 - d.x0))
+    .attr('height', d => Math.max(0, d.y1 - d.y0))
+    .attr('fill', d => nodeColor(d))
+    .attr('stroke', d => d.data.warning ? '#ffc107' : 'rgba(255,255,255,0.7)')
     .attr('stroke-width', d => d.data.warning ? 2 : 1)
-    .attr('stroke-dasharray', d => d.data.warning ? '5,5' : 'none')
+    .attr('stroke-dasharray', d => d.data.warning ? '4,3' : 'none')
     .attr('rx', d => d.data.type === 'mail' ? 4 : 2)
     .style('cursor', 'pointer')
-    .each(function(d) {
-      const width = d.x1 - d.x0;
-      const height = d.y1 - d.y0;
-      
-      // Sehr kleine Boxen als "tiny" markieren
-      if (width < 30 || height < 15) {
-        d3.select(this.parentNode).classed('tiny', true);
-      }
-      
-      // Warnung-Klasse hinzufügen
-      if (d.data.warning) {
-        d3.select(this.parentNode).classed('warning-node', true);
-      }
-    })
     .on('mouseover', function(event, d) {
-      const width = d.x1 - d.x0;
-      const height = d.y1 - d.y0;
-      
-      // Nur bei ausreichend großen Boxen Hover-Effekt
-      if (width >= 30 && height >= 15) {
+      if ((d.x1 - d.x0) >= 20 && (d.y1 - d.y0) >= 15) {
         d3.select(this)
-          .attr('stroke', 'var(--primary-color)')
+          .attr('stroke', '#0077cc')
           .attr('stroke-width', 2)
-          .style('filter', 'drop-shadow(2px 2px 4px rgba(0,119,204,0.3))');
+          .style('filter', 'drop-shadow(1px 1px 3px rgba(0,119,204,0.3))');
       }
     })
-    .on('mouseout', function(event, d) {
+    .on('mouseout', function() {
       d3.select(this)
-        .attr('stroke', 'rgba(255,255,255,0.8)')
+        .attr('stroke', 'rgba(255,255,255,0.7)')
         .attr('stroke-width', 1)
         .style('filter', 'none');
     });
-  
+
+  // Blatt-Labels
   nodes.append('text')
     .attr('x', 4)
-    .attr('y', 16)
+    .attr('y', 14)
     .attr('font-size', '10px')
-    .attr('fill', '#333')
+    .attr('fill', '#222')
     .style('pointer-events', 'none')
-    .style('overflow', 'hidden')
-    .style('text-overflow', 'ellipsis')
-    .style('white-space', 'nowrap')
     .each(function(d) {
-      const element = d3.select(this);
-      const width = d.x1 - d.x0;
-      const height = d.y1 - d.y0;
-      
-      // Mindestgröße für Textanzeige: 60px Breite und 20px Höhe
-      if (width < 60 || height < 20) {
-        element.style('display', 'none');
-        return;
-      }
-      
-      const icon = d.data.type === 'mail' ? '📧' : 
-                  d.data.type === 'other-mails' ? '📦' : '📁';
-      
-      // Maximale Textlänge basierend auf Boxbreite
-      const maxChars = Math.max(5, Math.floor((width - 20) / 6)); // ~6px pro Zeichen
-      const name = d.data.type === 'mail' ? 
-                   truncateText(d.data.name, maxChars) : 
-                   truncateText(d.data.name, maxChars);
-      
-      element.text(`${icon} ${name}`)
-        .attr('width', width - 8) // Padding berücksichtigen
-        .style('max-width', (width - 8) + 'px');
+      const el = d3.select(this);
+      const w = d.x1 - d.x0;
+      const h = d.y1 - d.y0;
+      if (w < 50 || h < 18) { el.style('display', 'none'); return; }
+      const icon = d.data.type === 'mail' ? '📧' :
+                   d.data.type === 'other-mails' ? '📦' : '📁';
+      const maxChars = Math.max(4, Math.floor((w - 16) / 6));
+      el.text(`${icon} ${truncateText(d.data.name, maxChars)}`);
     });
-  
-  // Tooltip für vollständige Namen
+
+  // Tooltips
   nodes.append('title')
     .text(d => {
-      const icon = d.data.type === 'mail' ? '📧' : 
-                  d.data.type === 'other-mails' ? '📦' : '📁';
+      const icon = d.data.type === 'mail' ? '📧' :
+                   d.data.type === 'other-mails' ? '📦' : '📁';
       return `${icon} ${d.data.name}\nGröße: ${formatSize(d.data.size || 0)}`;
     });
   

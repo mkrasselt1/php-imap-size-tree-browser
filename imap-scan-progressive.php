@@ -374,32 +374,37 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         ];
     }
 
-    // Die 10 größten Mails als eigene Knoten (wie im normalen Scan)
+    // Die größten Mails als eigene Knoten
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $biggestMails = array_slice($mails, 0, 10);
+    $topCount = min(50, count($mails));
+    $biggestMails = array_slice($mails, 0, $topCount);
+    $otherMails = array_slice($mails, $topCount);
 
-    // Restliche Mails zusammenfassen
-    $otherMails = array_slice($mails, 10);
-    $otherSize = 0;
-    foreach ($otherMails as $mail) {
-        $otherSize += $mail['size'];
-    }
-
-    // Größte Mails als eigene Knoten hinzufügen
     foreach ($biggestMails as $mail) {
         $children[] = $mail;
     }
 
-    // Restliche Mails zusammenfassen
-    if ($otherSize > 0) {
-        $children[] = [
-            'name' => "Weitere E-Mails (" . $shortName . ")",
-            'type' => 'other-mails',
-            'size' => $otherSize,
-            'count' => count($otherMails),
-            'folderFull' => $folderFull,
-            'folder' => $shortName
-        ];
+    // Restliche Mails in Gruppen aufteilen
+    if (count($otherMails) > 0) {
+        $groupSize = max(50, (int) ceil(count($otherMails) / 5));
+        $chunks = array_chunk($otherMails, $groupSize);
+        foreach ($chunks as $idx => $chunk) {
+            $chunkTotal = 0;
+            foreach ($chunk as $mail) {
+                $chunkTotal += $mail['size'];
+            }
+            $label = count($chunks) > 1
+                ? "Weitere E-Mails " . ($idx + 1) . "/" . count($chunks) . " (" . $shortName . ")"
+                : "Weitere E-Mails (" . $shortName . ")";
+            $children[] = [
+                'name' => $label,
+                'type' => 'other-mails',
+                'size' => $chunkTotal,
+                'count' => count($chunk),
+                'folderFull' => $folderFull,
+                'folder' => $shortName
+            ];
+        }
     }
 
     // Wenn mehr Mails vorhanden sind, als verarbeitet wurden
