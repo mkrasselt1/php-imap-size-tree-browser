@@ -381,38 +381,9 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         ];
     }
 
-    // Die größten Mails als eigene Knoten
+    // Alle Mails nach Größe sortieren — alle einzeln anzeigen
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $topCount = min(50, count($mails));
-    $biggestMails = array_slice($mails, 0, $topCount);
-    $otherMails = array_slice($mails, $topCount);
-
-    foreach ($biggestMails as $mail) {
-        $children[] = $mail;
-    }
-
-    // Restliche Mails in Gruppen aufteilen
-    if (count($otherMails) > 0) {
-        $groupSize = max(50, (int) ceil(count($otherMails) / 5));
-        $chunks = array_chunk($otherMails, $groupSize);
-        foreach ($chunks as $idx => $chunk) {
-            $chunkTotal = 0;
-            foreach ($chunk as $mail) {
-                $chunkTotal += $mail['size'];
-            }
-            $label = count($chunks) > 1
-                ? "Weitere E-Mails " . ($idx + 1) . "/" . count($chunks) . " (" . $shortName . ")"
-                : "Weitere E-Mails (" . $shortName . ")";
-            $children[] = [
-                'name' => $label,
-                'type' => 'other-mails',
-                'size' => $chunkTotal,
-                'count' => count($chunk),
-                'folderFull' => $folderFull,
-                'folder' => $shortName
-            ];
-        }
-    }
+    $children = array_merge($children, $mails);
 
     // Wenn mehr Mails vorhanden sind, als verarbeitet wurden
     if ($check->Nmsgs > $maxMails) {
