@@ -1453,6 +1453,46 @@ async function downloadAttachment(filename, partNum, uid, folder) {
   await fetchCsrfToken();
 }
 
+// Mail lokal aus dem Datenbaum entfernen und Größen aktualisieren
+function removeMailFromTree(node, uid, folder) {
+  if (!node.children) return false;
+
+  for (let i = 0; i < node.children.length; i++) {
+    const child = node.children[i];
+
+    // Gefunden: Mail mit passender UID im richtigen Ordner
+    if (child.type === 'mail' && String(child.uid) === String(uid) &&
+        (child.folderFull === folder || child.folder === folder)) {
+      const removedSize = child.size || 0;
+      node.children.splice(i, 1);
+
+      // Größen im Elternknoten aktualisieren
+      if (node.childrenTotalSize) {
+        node.childrenTotalSize -= removedSize;
+      }
+      if (node.size) {
+        node.size -= removedSize;
+      }
+      return true;
+    }
+
+    // Rekursiv in Unterordnern suchen
+    if (child.children && removeMailFromTree(child, uid, folder)) {
+      // Größen nach oben propagieren
+      if (node.childrenTotalSize && child.size) {
+        // Neu berechnen
+        let total = 0;
+        node.children.forEach(c => {
+          total += c.size || c.childrenTotalSize || 0;
+        });
+        node.childrenTotalSize = total;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 async function deleteMail(uid, folder) {
   if (!confirm('Möchten Sie diese E-Mail wirklich löschen?')) {
     return;
@@ -1481,9 +1521,12 @@ async function deleteMail(uid, folder) {
     if (result.success) {
       closeModal();
       showSuccess('E-Mail erfolgreich gelöscht!');
-      
-      // Refresh data mit dem gleichen Scan-Typ wie ursprünglich verwendet
-      await refreshDataAfterDelete();
+
+      // Mail lokal aus dem Datenbaum entfernen statt komplettem Rescan
+      removeMailFromTree(imapData, uid, folder);
+      localStorage.setItem('imapTreeData', JSON.stringify(imapData));
+      currentData = imapData;
+      showVisualization();
       
     } else {
       throw new Error(result.error || 'Unbekannter Fehler');
