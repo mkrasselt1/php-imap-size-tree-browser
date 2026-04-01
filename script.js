@@ -442,26 +442,25 @@ async function handleProgressiveScan(formData) {
   const cacheKey = initData.cacheKey;
   
   for (let i = 0; i < initData.totalFolders; i++) {
-    const folderFormData = new FormData();
-    folderFormData.append('server', getCredential('server'));
-    folderFormData.append('port', getCredential('port'));
-    folderFormData.append('user', getCredential('user'));
-    folderFormData.append('pass', getCredential('pass'));
-    folderFormData.append('ssl', getCredential('ssl'));
-    folderFormData.append('action', 'scan');
-    folderFormData.append('cacheKey', cacheKey);
-    folderFormData.append('folderIndex', i.toString());
-    await appendSecurityTokens(folderFormData);
-
     let scanData = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        // FormData pro Versuch neu erstellen (fetch konsumiert den Body)
+        const folderFormData = new FormData();
+        folderFormData.append('server', getCredential('server'));
+        folderFormData.append('port', getCredential('port'));
+        folderFormData.append('user', getCredential('user'));
+        folderFormData.append('pass', getCredential('pass'));
+        folderFormData.append('ssl', getCredential('ssl'));
+        folderFormData.append('action', 'scan');
+        folderFormData.append('cacheKey', cacheKey);
+        folderFormData.append('folderIndex', i.toString());
+        await appendSecurityTokens(folderFormData);
+
         const scanResponse = await fetch('imap-scan-progressive.php', {
           method: 'POST',
           body: folderFormData
         });
-
-        await fetchCsrfToken();
 
         if (!scanResponse.ok) {
           console.warn(`Ordner ${i}: HTTP ${scanResponse.status} (Versuch ${attempt + 1})`);

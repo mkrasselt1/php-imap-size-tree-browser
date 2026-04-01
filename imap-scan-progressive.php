@@ -344,21 +344,13 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         if (!$uid) continue;
 
         $subject = isset($msg->subject) ? safe_imap_utf8($msg->subject) : '';
-        $from = isset($msg->from) ? safe_imap_utf8($msg->from) : '';
-        $date = $msg->date ?? '';
 
         $mails[] = [
             'name' => $subject ?: 'Kein Betreff',
             'type' => 'mail',
             'size' => $size,
-            'from' => $from,
-            'date' => $date,
             'uid' => $uid,
             'folderFull' => $folderFull,
-            'folder' => $shortName,
-            'isTrash' => strpos(strtolower($folderFull), 'trash') !== false ||
-                        strpos(strtolower($folderFull), 'deleted') !== false ||
-                        strpos(strtolower($folderFull), 'papierkorb') !== false,
         ];
     }
 

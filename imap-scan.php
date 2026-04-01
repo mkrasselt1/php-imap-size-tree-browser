@@ -92,22 +92,10 @@ function getFolderTree($inbox, $mailbox, $folderFull) {
         if ($overview && isset($overview[0]->size)) {
             $mail = [
                 'name' => safe_imap_utf8($overview[0]->subject ?? '(kein Betreff)'),
-                'from' => $overview[0]->from ?? '',
-                'date' => $overview[0]->date ?? '',
                 'size' => $overview[0]->size,
                 'uid'  => $overview[0]->uid,
-                'folder' => $folderFull,
                 'type' => 'mail',
                 'folderFull' => $folderFull,
-                'isTrash' => strpos(strtolower($folderFull), 'trash') !== false ||
-                            strpos(strtolower($folderFull), 'deleted') !== false ||
-                            strpos(strtolower($folderFull), 'papierkorb') !== false,
-                'rawSubject' => $overview[0]->subject ?? '',
-                'debug' => [
-                    'folderFull' => $folderFull,
-                    'uid' => $overview[0]->uid,
-                    'msgNum' => $i
-                ]
             ];
             $mails[] = $mail;
             $totalSize += $overview[0]->size;
