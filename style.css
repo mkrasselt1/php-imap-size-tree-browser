@@ -269,9 +269,13 @@ body {
 
 .sidebar {
   width: 280px;
+  min-width: 280px;
+  height: 100%;
+  max-height: calc(85vh - 80px);
   background: var(--light-bg);
   border-right: 1px solid var(--border-color);
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem 0;
 }
 
