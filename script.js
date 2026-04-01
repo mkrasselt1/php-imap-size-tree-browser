@@ -864,40 +864,56 @@ function renderTreemap() {
 
   const leafCount = root.leaves().length;
 
-  // Hat der aktuelle Knoten Unterordner? Dann brauchen wir paddingTop für Labels
-  const hasSubfolders = root.children && root.children.some(c => c.children);
-  const phi = (1 + Math.sqrt(5)) / 2;
+  // Slice-and-Dice: abwechselnd horizontal/vertikal pro Tiefe (wie WinDirStat)
   d3.treemap()
     .size([width, height])
-    .paddingOuter(hasSubfolders ? 3 : 1)
-    .paddingTop(hasSubfolders ? 20 : 1)
-    .paddingInner(hasSubfolders ? 2 : 1)
+    .paddingOuter(1)
+    .paddingTop(18)
+    .paddingInner(1)
     .round(false)
-    .tile(d3.treemapSquarify.ratio(phi))
+    .tile(d3.treemapSliceDice)
     (root);
 
+  // SVG mit Gradient-Definitionen für Cushion-Effekt
   const svg = d3.select(container)
     .append('svg')
     .attr('width', width)
     .attr('height', height);
 
+  const defs = svg.append('defs');
+
+  // Kräftige, satte Farben wie WinDirStat
   const baseColors = [
-    '#e63946', '#457b9d', '#2a9d8f', '#f4a261',
-    '#a8dadc', '#b7b7a4', '#ffb4a2', '#6d6875'
+    '#c41e3a', '#1a6fb5', '#1d8348', '#d4731a',
+    '#7d3c98', '#2e86c1', '#b7950b', '#a93226',
+    '#148f77', '#6c3483', '#d68910', '#1f618d'
   ];
 
-  // Hilfsfunktion: Farbe eines Knotens basierend auf seinem Wurzel-Ordner
+  // Farbe basierend auf Ordner-Index
   function nodeColor(d) {
-    if (d.data.warning) return '#fff3cd';
     let rootChild = d;
     while (rootChild.depth > 1) rootChild = rootChild.parent;
     const idx = root.children ? root.children.indexOf(rootChild) : 0;
-    const baseColor = baseColors[Math.abs(idx) % baseColors.length];
-    const intensity = Math.min(d.depth * 0.12, 0.6);
-    return shadeColor(baseColor, intensity);
+    return baseColors[Math.abs(idx) % baseColors.length];
   }
 
-  // Ordner-Hintergründe (alle inneren Knoten mit Kindern)
+  // Cushion-Gradient pro Blatt erzeugen
+  const leaves = root.leaves();
+  leaves.forEach((d, i) => {
+    const base = nodeColor(d);
+    const lighter = shadeColor(base, 0.4);
+    const darker = shadeColor(base, -0.35);
+
+    const grad = defs.append('linearGradient')
+      .attr('id', `cushion-${i}`)
+      .attr('x1', '0%').attr('y1', '0%')
+      .attr('x2', '100%').attr('y2', '100%');
+    grad.append('stop').attr('offset', '0%').attr('stop-color', lighter);
+    grad.append('stop').attr('offset', '50%').attr('stop-color', base);
+    grad.append('stop').attr('offset', '100%').attr('stop-color', darker);
+  });
+
+  // Ordner-Hintergründe mit dunklen Rahmen
   const folders = root.descendants().filter(d => d.children && d.depth >= 1);
   svg.selectAll('.folder-bg')
     .data(folders)
@@ -908,35 +924,36 @@ function renderTreemap() {
     .attr('y', d => d.y0)
     .attr('width', d => Math.max(0, d.x1 - d.x0))
     .attr('height', d => Math.max(0, d.y1 - d.y0))
-    .attr('fill', d => shadeColor(nodeColor(d), 0.4))
-    .attr('stroke', d => d.depth === 1 ? '#333' : 'rgba(0,0,0,0.15)')
-    .attr('stroke-width', d => d.depth === 1 ? 2 : 1)
-    .attr('rx', d => d.depth === 1 ? 6 : 3);
+    .attr('fill', d => {
+      const base = nodeColor(d);
+      return shadeColor(base, 0.6);
+    })
+    .attr('stroke', '#222')
+    .attr('stroke-width', d => Math.max(1, 3 - d.depth));
 
-  // Ordner-Labels
+  // Ordner-Labels (weiß auf dunklem Hintergrund)
   svg.selectAll('.folder-label')
     .data(folders)
     .enter()
     .append('text')
     .attr('class', 'folder-label')
-    .attr('x', d => d.x0 + 6)
-    .attr('y', d => d.y0 + 15)
-    .attr('font-size', d => d.depth === 1 ? '12px' : '10px')
+    .attr('x', d => d.x0 + 4)
+    .attr('y', d => d.y0 + 13)
+    .attr('font-size', '11px')
     .attr('font-weight', 'bold')
-    .attr('fill', '#333')
+    .attr('fill', '#fff')
     .style('pointer-events', 'none')
+    .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)')
     .each(function(d) {
       const el = d3.select(this);
       const w = d.x1 - d.x0;
       const h = d.y1 - d.y0;
-      if (w < 60 || h < 22) { el.style('display', 'none'); return; }
-      const maxChars = Math.max(4, Math.floor((w - 16) / 7));
-      const size = formatSize(d.value || 0);
-      el.text(`📁 ${truncateText(d.data.name, maxChars)} (${size})`);
+      if (w < 50 || h < 18) { el.style('display', 'none'); return; }
+      const maxChars = Math.max(4, Math.floor((w - 12) / 7));
+      el.text(truncateText(d.data.name, maxChars));
     });
 
-  // Blätter (Mails + other-mails)
-  const leaves = root.leaves();
+  // Blätter mit Cushion-Gradient
   const nodes = svg.selectAll('.node')
     .data(leaves)
     .enter()
@@ -947,52 +964,43 @@ function renderTreemap() {
   nodes.append('rect')
     .attr('width', d => Math.max(0, d.x1 - d.x0))
     .attr('height', d => Math.max(0, d.y1 - d.y0))
-    .attr('fill', d => nodeColor(d))
-    .attr('stroke', d => d.data.warning ? '#ffc107' : 'rgba(255,255,255,0.7)')
-    .attr('stroke-width', d => d.data.warning ? 2 : 1)
-    .attr('stroke-dasharray', d => d.data.warning ? '4,3' : 'none')
-    .attr('rx', d => d.data.type === 'mail' ? 4 : 2)
+    .attr('fill', (d, i) => `url(#cushion-${i})`)
+    .attr('stroke', '#111')
+    .attr('stroke-width', 0.5)
     .style('cursor', 'pointer')
-    .on('mouseover', function(event, d) {
-      if ((d.x1 - d.x0) >= 20 && (d.y1 - d.y0) >= 15) {
-        d3.select(this)
-          .attr('stroke', '#0077cc')
-          .attr('stroke-width', 2)
-          .style('filter', 'drop-shadow(1px 1px 3px rgba(0,119,204,0.3))');
-      }
+    .on('mouseover', function() {
+      d3.select(this)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2)
+        .style('filter', 'brightness(1.2)');
     })
     .on('mouseout', function() {
       d3.select(this)
-        .attr('stroke', 'rgba(255,255,255,0.7)')
-        .attr('stroke-width', 1)
+        .attr('stroke', '#111')
+        .attr('stroke-width', 0.5)
         .style('filter', 'none');
     });
 
-  // Blatt-Labels
+  // Blatt-Labels (weiß mit Schatten)
   nodes.append('text')
-    .attr('x', 4)
-    .attr('y', 14)
-    .attr('font-size', '10px')
-    .attr('fill', '#222')
+    .attr('x', 3)
+    .attr('y', 12)
+    .attr('font-size', '9px')
+    .attr('fill', '#fff')
     .style('pointer-events', 'none')
+    .style('text-shadow', '1px 1px 1px rgba(0,0,0,0.8)')
     .each(function(d) {
       const el = d3.select(this);
       const w = d.x1 - d.x0;
       const h = d.y1 - d.y0;
-      if (w < 50 || h < 18) { el.style('display', 'none'); return; }
-      const icon = d.data.type === 'mail' ? '📧' :
-                   d.data.type === 'other-mails' ? '📦' : '📁';
-      const maxChars = Math.max(4, Math.floor((w - 16) / 6));
-      el.text(`${icon} ${truncateText(d.data.name, maxChars)}`);
+      if (w < 40 || h < 14) { el.style('display', 'none'); return; }
+      const maxChars = Math.max(3, Math.floor((w - 8) / 6));
+      el.text(truncateText(d.data.name, maxChars));
     });
 
   // Tooltips
   nodes.append('title')
-    .text(d => {
-      const icon = d.data.type === 'mail' ? '📧' :
-                   d.data.type === 'other-mails' ? '📦' : '📁';
-      return `${icon} ${d.data.name}\nGröße: ${formatSize(d.data.size || 0)}`;
-    });
+    .text(d => `${d.data.name}\n${formatSize(d.data.size || 0)}`);
   
   attachTreemapEventListeners(nodes);
   
