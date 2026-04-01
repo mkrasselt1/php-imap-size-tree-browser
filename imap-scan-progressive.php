@@ -76,18 +76,22 @@ if (!is_dir($cacheDir)) {
     mkdir($cacheDir, 0755, true);
 }
 
-// Cache cleanup: remove files older than 1 hour
-$cacheFiles = glob($cacheDir . '/scan_*.json');
-if ($cacheFiles) {
-    foreach ($cacheFiles as $file) {
-        if (filemtime($file) < time() - 3600) {
-            @unlink($file);
+if ($action === 'init') {
+    // Cleanup: alte Scan-Verzeichnisse löschen (>1h)
+    foreach (glob($cacheDir . '/scan_*', GLOB_ONLYDIR) as $oldDir) {
+        if (filemtime($oldDir) < time() - 3600) {
+            array_map('unlink', glob($oldDir . '/*.json'));
+            @rmdir($oldDir);
         }
     }
-}
+    // Legacy: alte einzelne Cache-Dateien auch aufräumen
+    foreach (glob($cacheDir . '/scan_*.json') as $oldFile) {
+        if (filemtime($oldFile) < time() - 3600) {
+            @unlink($oldFile);
+        }
+    }
 
-if ($action === 'init') {
-    // Schritt 1: Ordnerliste abrufen
+    // Ordnerliste abrufen
     $folders = imap_list($inbox, $mailbox, '*');
     if (!$folders) {
         imap_close($inbox);
@@ -95,20 +99,19 @@ if ($action === 'init') {
         exit;
     }
 
-    // Cache-Key generieren
+    // Cache-Key = eigenes Verzeichnis pro Scan
     $cacheKey = 'scan_' . md5($params['server'] . $user . time());
+    $scanDir = $cacheDir . '/' . $cacheKey;
+    mkdir($scanDir, 0755, true);
 
-    // Ordnerliste in Cache speichern
-    $cacheData = [
+    // Meta-Datei: nur Ordnerliste + Mailbox-String
+    $meta = [
         'folders' => $folders,
         'mailbox' => $mailbox,
         'totalFolders' => count($folders),
-        'scannedFolders' => 0,
-        'results' => [],
         'startTime' => time()
     ];
-
-    file_put_contents($cacheDir . '/' . $cacheKey . '.json', json_encode($cacheData));
+    file_put_contents($scanDir . '/meta.json', json_encode($meta), LOCK_EX);
 
     imap_close($inbox);
     echo json_encode([
@@ -117,61 +120,57 @@ if ($action === 'init') {
         'totalFolders' => count($folders),
         'folders' => array_map(function($folder) use ($mailbox) {
             $shortName = str_replace($mailbox, '', $folder);
-            // Ordnername korrekt dekodieren für Umlaute
             $shortName = safe_imap_utf8($shortName);
-            return [
-                'full' => $folder,
-                'name' => $shortName
-            ];
+            return ['full' => $folder, 'name' => $shortName];
         }, $folders)
     ], JSON_UNESCAPED_UNICODE);
 
 } elseif ($action === 'scan') {
-    // Schritt 2: Einzelnen Ordner scannen
+    // Einzelnen Ordner scannen — Ergebnis in eigener Datei
     if (!$cacheKey) {
         imap_close($inbox);
         echo json_encode(['error' => 'Cache-Key fehlt']);
         exit;
     }
 
-    $cacheFile = $cacheDir . '/' . $cacheKey . '.json';
-    if (!file_exists($cacheFile)) {
+    $scanDir = $cacheDir . '/' . $cacheKey;
+    $metaFile = $scanDir . '/meta.json';
+    if (!file_exists($metaFile)) {
         imap_close($inbox);
-        echo json_encode(['error' => 'Cache-Datei nicht gefunden']);
+        echo json_encode(['error' => 'Scan-Session nicht gefunden. Bitte neu starten.']);
         exit;
     }
 
-    $cacheData = json_decode(file_get_contents($cacheFile), true);
-
-    if (!is_array($cacheData) || !isset($cacheData['folders'])) {
+    $meta = json_decode(file_get_contents($metaFile), true);
+    if (!is_array($meta) || !isset($meta['folders'])) {
         imap_close($inbox);
-        echo json_encode(['error' => 'Cache-Datei beschädigt. Bitte Scan neu starten.']);
+        echo json_encode(['error' => 'Scan-Session beschädigt. Bitte neu starten.']);
         exit;
     }
 
-    if ($folderIndex >= count($cacheData['folders'])) {
+    if ($folderIndex >= count($meta['folders'])) {
         imap_close($inbox);
         echo json_encode(['error' => 'Ungültiger Ordner-Index']);
         exit;
     }
 
-    $folderFull = $cacheData['folders'][$folderIndex];
-    $folderResult = scanSingleFolder($inbox, $cacheData['mailbox'], $folderFull);
+    $folderFull = $meta['folders'][$folderIndex];
+    $folderResult = scanSingleFolder($inbox, $meta['mailbox'], $folderFull);
 
-    // Ergebnis in Cache speichern
-    $cacheData['results'][] = $folderResult;
-    $cacheData['scannedFolders']++;
+    // Ergebnis in eigener Datei speichern (keine Race-Condition!)
+    file_put_contents($scanDir . '/folder_' . $folderIndex . '.json', json_encode($folderResult), LOCK_EX);
 
-    file_put_contents($cacheFile, json_encode($cacheData));
+    // Fortschritt zählen: wie viele folder_*.json existieren?
+    $scanned = count(glob($scanDir . '/folder_*.json'));
 
     imap_close($inbox);
     echo json_encode([
         'status' => 'folder_scanned',
         'folder' => $folderResult,
         'progress' => [
-            'current' => $cacheData['scannedFolders'],
-            'total' => $cacheData['totalFolders'],
-            'percent' => round(($cacheData['scannedFolders'] / $cacheData['totalFolders']) * 100, 1)
+            'current' => $scanned,
+            'total' => $meta['totalFolders'],
+            'percent' => round(($scanned / $meta['totalFolders']) * 100, 1)
         ]
     ], JSON_UNESCAPED_UNICODE);
 
@@ -246,33 +245,40 @@ if ($action === 'init') {
     ], JSON_UNESCAPED_UNICODE);
 
 } elseif ($action === 'finalize') {
-    // Schritt 3: Ergebnisse zusammenfassen
+    // Ergebnisse aus einzelnen Ordner-Dateien zusammenfassen
     if (!$cacheKey) {
         imap_close($inbox);
         echo json_encode(['error' => 'Cache-Key fehlt']);
         exit;
     }
 
-    $cacheFile = $cacheDir . '/' . $cacheKey . '.json';
-    if (!file_exists($cacheFile)) {
+    $scanDir = $cacheDir . '/' . $cacheKey;
+    $metaFile = $scanDir . '/meta.json';
+    if (!file_exists($metaFile)) {
         imap_close($inbox);
-        echo json_encode(['error' => 'Cache-Datei nicht gefunden']);
+        echo json_encode(['error' => 'Scan-Session nicht gefunden.']);
         exit;
     }
 
-    $cacheData = json_decode(file_get_contents($cacheFile), true);
+    $meta = json_decode(file_get_contents($metaFile), true);
 
-    if (!is_array($cacheData) || !isset($cacheData['results'])) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Cache-Datei beschädigt. Bitte Scan neu starten.']);
-        exit;
+    // Alle Ordner-Ergebnisse einlesen
+    $results = [];
+    $folderFiles = glob($scanDir . '/folder_*.json');
+    sort($folderFiles); // Reihenfolge sicherstellen
+    foreach ($folderFiles as $ff) {
+        $folderData = json_decode(file_get_contents($ff), true);
+        if ($folderData) {
+            $results[] = $folderData;
+        }
     }
 
     // Hierarchie aufbauen
-    $tree = buildFolderHierarchy($cacheData['results'], $cacheData['mailbox']);
+    $tree = buildFolderHierarchy($results, $meta['mailbox'] ?? $mailbox);
 
-    // Cache-Datei löschen
-    unlink($cacheFile);
+    // Scan-Verzeichnis aufräumen
+    array_map('unlink', glob($scanDir . '/*.json'));
+    @rmdir($scanDir);
 
     imap_close($inbox);
     echo json_encode($tree, JSON_UNESCAPED_UNICODE);
