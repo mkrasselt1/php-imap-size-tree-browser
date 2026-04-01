@@ -59,9 +59,9 @@ if ($cacheKey !== '' && !preg_match('/^scan_[a-f0-9]{32}$/', $cacheKey)) {
 }
 
 // IMAP-Verbindung mit Timeouts
-imap_timeout(IMAP_OPENTIMEOUT, 15);
-imap_timeout(IMAP_READTIMEOUT, 15);
-imap_timeout(IMAP_WRITETIMEOUT, 15);
+imap_timeout(IMAP_OPENTIMEOUT, 30);
+imap_timeout(IMAP_READTIMEOUT, 30);
+imap_timeout(IMAP_WRITETIMEOUT, 30);
 imap_timeout(IMAP_CLOSETIMEOUT, 15);
 
 $inbox = @imap_open($mailbox, $user, $pass);

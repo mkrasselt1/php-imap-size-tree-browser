@@ -453,33 +453,50 @@ async function handleProgressiveScan(formData) {
     folderFormData.append('folderIndex', i.toString());
     await appendSecurityTokens(folderFormData);
 
-    const scanResponse = await fetch('imap-scan-progressive.php', {
-      method: 'POST',
-      body: folderFormData
-    });
+    let scanData = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const scanResponse = await fetch('imap-scan-progressive.php', {
+          method: 'POST',
+          body: folderFormData
+        });
 
-    await fetchCsrfToken();
+        await fetchCsrfToken();
 
-    if (!scanResponse.ok) {
-      console.warn(`Fehler beim Scannen von Ordner ${i}: HTTP ${scanResponse.status}`);
-      continue;
+        if (!scanResponse.ok) {
+          console.warn(`Ordner ${i}: HTTP ${scanResponse.status} (Versuch ${attempt + 1})`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+
+        const text = await scanResponse.text();
+        if (!text) {
+          console.warn(`Ordner ${i}: Leere Antwort (Versuch ${attempt + 1})`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          continue;
+        }
+
+        scanData = JSON.parse(text);
+        break;
+      } catch (e) {
+        console.warn(`Ordner ${i}: ${e.message} (Versuch ${attempt + 1})`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
     }
 
-    const scanData = await scanResponse.json();
-    
-    if (scanData.error) {
-      console.warn(`Fehler beim Scannen von Ordner ${i}: ${scanData.error}`);
+    if (!scanData || scanData.error) {
+      console.warn(`Ordner ${i} übersprungen: ${scanData?.error || 'keine Antwort nach 3 Versuchen'}`);
       continue;
     }
 
     // Fortschritt aktualisieren
-    updateProgress(scanData.progress.percent, 
+    updateProgress(scanData.progress.percent,
       `${scanData.progress.current}/${scanData.progress.total} - ${scanData.folder.name}`);
-    
+
     results.push(scanData.folder);
-    
-    // Kurze Pause zwischen Requests
-    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Pause zwischen Requests — IMAP-Server Rate-Limiting vermeiden
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
   // Schritt 3: Finalisierung
