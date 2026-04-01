@@ -1139,6 +1139,16 @@ function showItemInfo(item) {
     }
   }
 
+  // "Ordner leeren" Button für Ordner
+  if (item.folderFull && item.children) {
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn btn-danger';
+    clearBtn.style.cssText = 'margin-top: 1rem; margin-right: 0.5rem;';
+    clearBtn.textContent = '🗑️ Ordner komplett leeren';
+    clearBtn.addEventListener('click', () => clearFolder(item));
+    infoPanel.appendChild(clearBtn);
+  }
+
   if (history.length > 0) {
     const backBtn = document.createElement('button');
     backBtn.className = 'btn btn-secondary';
@@ -1467,6 +1477,182 @@ async function downloadAttachment(filename, partNum, uid, folder) {
   form.submit();
   document.body.removeChild(form);
   await fetchCsrfToken();
+}
+
+// Ordner komplett leeren — 3-stufige Bestätigung
+async function clearFolder(item) {
+  const folderName = item.name || item.folderFull;
+  const mailCount = item.children ? item.children.filter(c => c.type === 'mail').length : '?';
+
+  // === STUFE 1: Normaler Confirm mit vertauschten Buttons ===
+  // Wir bauen ein eigenes Modal statt confirm() — damit wir die Buttons tauschen können
+  const result1 = await showClearConfirmModal(
+    `⚠️ Ordner "${folderName}" leeren?`,
+    `Dies wird alle E-Mails in diesem Ordner unwiderruflich löschen (${mailCount} sichtbare Mails).`,
+    'Abbrechen',   // links (sieht aus wie "OK")
+    'Ich bin sicher' // rechts
+  );
+  if (!result1) return;
+
+  // === STUFE 2: Klick auf "Abbrechen" zum Bestätigen ===
+  const result2 = await showClearConfirmModal(
+    `🛑 Wirklich ALLE Mails in "${folderName}" löschen?`,
+    'Diese Aktion kann NICHT rückgängig gemacht werden!\n\nKlicken Sie auf "Abbrechen" um fortzufahren.',
+    'Abbrechen — Ja, wirklich löschen',  // links — ist eigentlich "bestätigen"
+    'Nein, doch nicht'                     // rechts — ist eigentlich "abbrechen"
+  );
+  if (!result2) return;
+
+  // === STUFE 3: Text eingeben ===
+  const confirmText = 'LÖSCHEN';
+  const result3 = await showClearInputModal(
+    `🔥 Letzte Warnung!`,
+    `Tippen Sie "${confirmText}" ein um den Ordner "${folderName}" endgültig zu leeren:`,
+    confirmText
+  );
+  if (!result3) return;
+
+  // === Löschen ausführen ===
+  try {
+    showLoading();
+    updateLoadingText(`Lösche alle Mails in "${folderName}"...`);
+
+    const formData = new FormData();
+    formData.append('folder', item.folderFull);
+    await appendSecurityTokens(formData);
+
+    const response = await fetch('imap-delete-folder.php', {
+      method: 'POST',
+      body: formData
+    });
+
+    const text = await response.text();
+    if (!text) throw new Error('Keine Antwort vom Server');
+
+    const result = JSON.parse(text);
+
+    if (result.success) {
+      showSuccess(`${result.message}`);
+      // Ordner lokal leeren
+      if (item.children) {
+        item.children = [];
+        item.size = 0;
+        item.childrenTotalSize = 0;
+      }
+      localStorage.setItem('imapTreeData', JSON.stringify(imapData));
+      currentData = imapData;
+      showVisualization();
+    } else {
+      throw new Error(result.error || 'Unbekannter Fehler');
+    }
+  } catch (error) {
+    showError('Fehler beim Leeren des Ordners: ' + error.message);
+    showVisualization();
+  }
+}
+
+// Bestätigungs-Modal mit zwei Buttons (links/rechts vertauschbar)
+function showClearConfirmModal(title, message, leftBtnText, rightBtnText) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal';
+    overlay.style.display = 'flex';
+
+    const box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.maxWidth = '450px';
+
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    box.appendChild(h2);
+
+    const p = document.createElement('p');
+    p.style.whiteSpace = 'pre-line';
+    p.textContent = message;
+    box.appendChild(p);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display: flex; gap: 1rem; margin-top: 1.5rem; justify-content: flex-end;';
+
+    const leftBtn = document.createElement('button');
+    leftBtn.className = 'btn btn-danger';
+    leftBtn.textContent = leftBtnText;
+    leftBtn.addEventListener('click', () => { overlay.remove(); resolve(true); });
+
+    const rightBtn = document.createElement('button');
+    rightBtn.className = 'btn btn-secondary';
+    rightBtn.textContent = rightBtnText;
+    rightBtn.addEventListener('click', () => { overlay.remove(); resolve(false); });
+
+    // Stufe 1: rechts = bestätigen, Stufe 2: links = bestätigen
+    btnRow.appendChild(leftBtn);
+    btnRow.appendChild(rightBtn);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  });
+}
+
+// Bestätigungs-Modal mit Texteingabe
+function showClearInputModal(title, message, expectedText) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal';
+    overlay.style.display = 'flex';
+
+    const box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.maxWidth = '450px';
+
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    box.appendChild(h2);
+
+    const p = document.createElement('p');
+    p.textContent = message;
+    box.appendChild(p);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control';
+    input.placeholder = expectedText;
+    input.style.cssText = 'margin: 1rem 0; font-size: 1.1rem; text-align: center; padding: 0.5rem;';
+    input.autocomplete = 'off';
+    box.appendChild(input);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display: flex; gap: 1rem; margin-top: 1rem; justify-content: flex-end;';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-danger';
+    confirmBtn.textContent = '🔥 Endgültig löschen';
+    confirmBtn.disabled = true;
+    confirmBtn.addEventListener('click', () => { overlay.remove(); resolve(true); });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Abbrechen';
+    cancelBtn.addEventListener('click', () => { overlay.remove(); resolve(false); });
+
+    input.addEventListener('input', () => {
+      confirmBtn.disabled = input.value !== expectedText;
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && input.value === expectedText) {
+        overlay.remove();
+        resolve(true);
+      }
+    });
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(confirmBtn);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    input.focus();
+  });
 }
 
 // Mail lokal aus dem Datenbaum entfernen und Größen aktualisieren
