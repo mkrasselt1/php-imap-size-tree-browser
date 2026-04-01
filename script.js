@@ -861,16 +861,18 @@ function renderTreemap() {
   const root = d3.hierarchy(currentData)
     .sum(d => d.size || 0)
     .sort((a, b) => b.value - a.value);
-  
+
   const leafCount = root.leaves().length;
 
+  // Hat der aktuelle Knoten Unterordner? Dann brauchen wir paddingTop für Labels
+  const hasSubfolders = root.children && root.children.some(c => c.children);
   const phi = (1 + Math.sqrt(5)) / 2;
   d3.treemap()
     .size([width, height])
-    .paddingOuter(4)
-    .paddingTop(22)
-    .paddingInner(2)
-    .round(true)
+    .paddingOuter(hasSubfolders ? 3 : 1)
+    .paddingTop(hasSubfolders ? 20 : 1)
+    .paddingInner(hasSubfolders ? 2 : 1)
+    .round(false)
     .tile(d3.treemapSquarify.ratio(phi))
     (root);
 
