@@ -331,17 +331,10 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
     $totalSize = 0;
     $mails = [];
 
-    // Mails in Batches holen (zu viele auf einmal kann timeout verursachen)
-    $numMsgs = $check->Nmsgs;
-    $overview = [];
-    $batchSize = 500;
-    for ($start = 1; $start <= $numMsgs; $start += $batchSize) {
-        $end = min($start + $batchSize - 1, $numMsgs);
-        $batch = @imap_fetch_overview($inbox, "{$start}:{$end}");
-        if ($batch) {
-            $overview = array_merge($overview, $batch);
-        }
-    }
+    // Maximal 500 Mails pro Ordner holen — ein einziger schneller Aufruf
+    $numMsgs = min($check->Nmsgs, 500);
+    $overview = @imap_fetch_overview($inbox, "1:{$numMsgs}");
+    if (!$overview) $overview = [];
 
     foreach ($overview as $msg) {
         $size = $msg->size ?? 0;
