@@ -864,14 +864,14 @@ function renderTreemap() {
 
   const leafCount = root.leaves().length;
 
-  // Slice-and-Dice: abwechselnd horizontal/vertikal pro Tiefe (wie WinDirStat)
+  // Squarify füllt den gesamten Raum in 2D, mit Ordner-Padding für Labels
   d3.treemap()
     .size([width, height])
     .paddingOuter(1)
     .paddingTop(18)
     .paddingInner(1)
     .round(false)
-    .tile(d3.treemapSliceDice)
+    .tile(d3.treemapSquarify)
     (root);
 
   // SVG mit Gradient-Definitionen für Cushion-Effekt
