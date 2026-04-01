@@ -633,7 +633,8 @@ function updateStats() {
 
   const stats = calculateStats(currentData);
   const statsGrid = document.getElementById('statsGrid');
-  
+  if (!statsGrid) return;
+
   statsGrid.innerHTML = `
     <div class="stat-card">
       <div class="stat-value">${formatNumber(stats.totalMails)}</div>
