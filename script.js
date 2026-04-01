@@ -859,7 +859,7 @@ function renderTreemap() {
   const height = container.clientHeight;
   
   const root = d3.hierarchy(currentData)
-    .sum(d => d.size || 0)
+    .sum(d => d.children ? 0 : (d.size || 0))
     .sort((a, b) => b.value - a.value);
 
   const leafCount = root.leaves().length;
