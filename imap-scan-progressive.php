@@ -1,6 +1,6 @@
 <?php
-set_time_limit(60);
-ini_set('max_execution_time', 60);
+set_time_limit(120);
+ini_set('max_execution_time', 120);
 ini_set('memory_limit', '256M');
 
 header('Content-Type: application/json');
@@ -328,48 +328,24 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
 
     $children = [];
     $totalSize = 0;
-    $maxMails = 1000; // Erhöht von 300 auf 1000 für bessere Abdeckung
-    $mails = []; // Array für alle Mails sammeln
+    $mails = [];
 
-    // Mails in Batches verarbeiten
-    $numMsgs = min($check->Nmsgs, $maxMails);
+    // Alle Mails in einem Aufruf holen (viel schneller als einzelne imap_headerinfo)
+    $numMsgs = $check->Nmsgs;
+    $overview = @imap_fetch_overview($inbox, "1:{$numMsgs}");
+    if (!$overview) $overview = [];
 
-    for ($i = 1; $i <= $numMsgs; $i++) {
-        $header = imap_headerinfo($inbox, $i);
-        if (!$header) continue;
-
-        $size = $header->Size ?? 0;
+    foreach ($overview as $msg) {
+        $size = $msg->size ?? 0;
         $totalSize += $size;
 
-        // UID für diese Mail abrufen
-        $uid = imap_uid($inbox, $i);
+        $uid = $msg->uid ?? 0;
         if (!$uid) continue;
 
-        // Sicherstellen, dass Subject richtig kodiert ist
-        $subject = '';
-        if (isset($header->subject)) {
-            $subject = safe_imap_utf8($header->subject);
-            // Zusätzliche Bereinigung für kaputte Encoding
-            if (!$subject || trim($subject) === '') {
-                $subject = isset($header->Subject) ? safe_imap_utf8($header->Subject) : '';
-            }
-        }
+        $subject = isset($msg->subject) ? safe_imap_utf8($msg->subject) : '';
+        $from = isset($msg->from) ? safe_imap_utf8($msg->from) : '';
+        $date = $msg->date ?? '';
 
-        $from = '';
-        if (isset($header->fromaddress)) {
-            $from = safe_imap_utf8($header->fromaddress);
-        } elseif (isset($header->from) && isset($header->from[0])) {
-            $from = safe_imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
-        }
-
-        $date = '';
-        if (isset($header->date)) {
-            $date = $header->date;
-        } elseif (isset($header->Date)) {
-            $date = $header->Date;
-        }
-
-        // Alle Mails sammeln (wie im normalen Scan)
         $mails[] = [
             'name' => $subject ?: 'Kein Betreff',
             'type' => 'mail',
@@ -379,42 +355,15 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
             'uid' => $uid,
             'folderFull' => $folderFull,
             'folder' => $shortName,
-            'messageNumber' => $i, // Für Debugging
-            'rawSubject' => $header->subject ?? '', // Für Debugging
             'isTrash' => strpos(strtolower($folderFull), 'trash') !== false ||
                         strpos(strtolower($folderFull), 'deleted') !== false ||
                         strpos(strtolower($folderFull), 'papierkorb') !== false,
-            'debug' => [
-                'folderFull' => $folderFull,
-                'shortName' => $shortName,
-                'msgNum' => $i,
-                'uid' => $uid
-            ]
         ];
     }
 
-    // Alle Mails nach Größe sortieren — alle einzeln anzeigen
+    // Alle Mails nach Größe sortieren
     usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    foreach ($mails as $mail) {
-        $children[] = $mail;
-    }
-
-    // Wenn mehr Mails vorhanden sind, als verarbeitet wurden
-    if ($check->Nmsgs > $maxMails) {
-        $remainingMails = $check->Nmsgs - $maxMails;
-        $remainingPercent = round(($remainingMails / $check->Nmsgs) * 100, 1);
-
-        $children[] = [
-            'name' => "Nicht gescannte E-Mails: $remainingMails ({$remainingPercent}%)",
-            'type' => 'other-mails',
-            'size' => 0,
-            'count' => $remainingMails,
-            'folderFull' => $folderFull,
-            'folder' => $shortName,
-            'warning' => true,
-            'details' => "Von {$check->Nmsgs} E-Mails wurden nur $maxMails gescannt. Das kann zu einem falschen Bild führen."
-        ];
-    }
+    $children = array_merge($children, $mails);
 
     return [
         'name' => $shortName,
@@ -423,7 +372,7 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
         'size' => $totalSize,
         'childrenTotalSize' => $totalSize,
         'children' => $children,
-        'totalMails' => $check->Nmsgs,
+        'totalMails' => $numMsgs,
         'scannedMails' => $numMsgs
     ];
 }
