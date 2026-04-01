@@ -223,6 +223,7 @@ if (isset($structure->parts) && count($structure->parts)) {
             }
             if ($isAttachment && $filename) {
                 global $attachments, $uid, $folder;
+                $filename = safe_imap_utf8($filename);
                 $attachments[] = [
                     'filename' => $filename,
                     'size' => isset($part->bytes) ? $part->bytes : null,

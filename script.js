@@ -1341,7 +1341,7 @@ function createMailModal(mailContent, mail) {
     ['Von', mailContent.from || 'Unbekannt'],
     ['Datum', mailContent.date || 'Unbekannt'],
     ['Gr\u00F6\u00DFe', formatSize(mail.size || 0)],
-    ['UID', (mail.uid || '') + ' (Ordner: ' + (mail.folder || '') + ')']
+    ['UID', (mail.uid || '') + ' (Ordner: ' + (mail.folderFull || mail.folder || '').replace(/^.*\}/, '') + ')']
   ];
 
   details.forEach(([label, value]) => {
