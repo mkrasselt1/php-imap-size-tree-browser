@@ -8,6 +8,7 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
 require_once __DIR__ . '/altcha.php';
+require_once __DIR__ . '/session-auth.php';
 
 csrf_enforce();
 altcha_enforce();
@@ -40,7 +41,7 @@ function safe_imap_utf8($text) {
     return $text;
 }
 
-$params = extract_imap_params();
+$params = get_imap_params();
 $mailbox = $params['mailbox'];
 $user = $params['user'];
 $pass = $params['pass'];
@@ -330,10 +331,17 @@ function scanSingleFolder($inbox, $mailbox, $folderFull) {
     $totalSize = 0;
     $mails = [];
 
-    // Alle Mails in einem Aufruf holen (viel schneller als einzelne imap_headerinfo)
+    // Mails in Batches holen (zu viele auf einmal kann timeout verursachen)
     $numMsgs = $check->Nmsgs;
-    $overview = @imap_fetch_overview($inbox, "1:{$numMsgs}");
-    if (!$overview) $overview = [];
+    $overview = [];
+    $batchSize = 500;
+    for ($start = 1; $start <= $numMsgs; $start += $batchSize) {
+        $end = min($start + $batchSize - 1, $numMsgs);
+        $batch = @imap_fetch_overview($inbox, "{$start}:{$end}");
+        if ($batch) {
+            $overview = array_merge($overview, $batch);
+        }
+    }
 
     foreach ($overview as $msg) {
         $size = $msg->size ?? 0;

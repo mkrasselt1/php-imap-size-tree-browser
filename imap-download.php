@@ -8,11 +8,12 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
 require_once __DIR__ . '/altcha.php';
+require_once __DIR__ . '/session-auth.php';
 
 csrf_enforce();
 altcha_enforce();
 
-$params = extract_imap_params();
+$params = get_imap_params();
 $mailbox = $params['mailbox'];
 $user = $params['user'];
 $pass = $params['pass'];
