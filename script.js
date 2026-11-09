@@ -1383,14 +1383,49 @@ function createMailModal(mailContent, mail) {
       attInfo.appendChild(attSize);
       attItem.appendChild(attInfo);
 
+      const attButtons = document.createElement('div');
+      attButtons.className = 'attachment-buttons';
+
+      // Vorschaufläche für Bilder (unter dem Eintrag)
+      const previewBox = document.createElement('div');
+      previewBox.className = 'attachment-preview';
+      previewBox.hidden = true;
+
+      if (att.previewable) {
+        const pvBtn = document.createElement('button');
+        pvBtn.className = 'btn btn-secondary';
+        pvBtn.textContent = '👁️ Ansehen';
+        pvBtn.addEventListener('click', () => toggleAttachmentPreview(att, mail, previewBox, pvBtn));
+        attButtons.appendChild(pvBtn);
+      }
+
       const dlBtn = document.createElement('button');
       dlBtn.className = 'btn btn-secondary';
-      dlBtn.textContent = '\uD83D\uDCBE Download';
+      dlBtn.textContent = '💾 Download';
       dlBtn.addEventListener('click', () => downloadAttachment(att.filename, att.partNum, mail.uid, mail.folderFull || mail.folder));
-      attItem.appendChild(dlBtn);
+      attButtons.appendChild(dlBtn);
 
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'btn btn-warning';
+      rmBtn.textContent = '✂️ Entfernen';
+      rmBtn.title = 'Nur diesen Anhang aus der Mail entfernen – die Mail selbst bleibt erhalten';
+      rmBtn.addEventListener('click', () => stripAttachments(mail, [att]));
+      attButtons.appendChild(rmBtn);
+
+      attItem.appendChild(attButtons);
       attList.appendChild(attItem);
+      attList.appendChild(previewBox);
     });
+
+    if (mailContent.attachments.length > 1) {
+      const allBtn = document.createElement('button');
+      allBtn.className = 'btn btn-warning';
+      allBtn.style.marginTop = '0.5rem';
+      const total = mailContent.attachments.reduce((sum, a) => sum + (a.size || 0), 0);
+      allBtn.textContent = '✂️ Alle ' + mailContent.attachments.length + ' Anhänge entfernen (ca. ' + formatSize(total) + ')';
+      allBtn.addEventListener('click', () => stripAttachments(mail, mailContent.attachments));
+      attList.appendChild(allBtn);
+    }
 
     attDetail.appendChild(attList);
     body.appendChild(attDetail);
@@ -1490,6 +1525,129 @@ async function downloadAttachment(filename, partNum, uid, folder) {
   form.submit();
   document.body.removeChild(form);
   await fetchCsrfToken();
+}
+
+// Bild-Anhang direkt im Vorschaufenster anzeigen (nur Rasterbilder, vom Server geprüft)
+async function toggleAttachmentPreview(att, mail, box, btn) {
+  if (!box.hidden) {
+    box.hidden = true;
+    btn.textContent = '👁️ Ansehen';
+    return;
+  }
+  if (box.dataset.loaded === '1') {
+    box.hidden = false;
+    btn.textContent = '👁️ Ausblenden';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Lädt…';
+  try {
+    const formData = new FormData();
+    formData.append('server', getCredential('server'));
+    formData.append('port', getCredential('port'));
+    formData.append('user', getCredential('user'));
+    formData.append('pass', getCredential('pass'));
+    formData.append('ssl', getCredential('ssl'));
+    formData.append('folder', mail.folderFull || mail.folder || '');
+    formData.append('uid', mail.uid);
+    formData.append('partNum', att.partNum);
+    formData.append('filename', att.filename);
+    formData.append('preview', '1');
+    await appendSecurityTokens(formData);
+
+    const response = await fetch('imap-download.php', { method: 'POST', body: formData });
+    await fetchCsrfToken();
+    const type = response.headers.get('Content-Type') || '';
+    if (!response.ok || !type.startsWith('image/')) {
+      let msg = 'Vorschau nicht möglich';
+      try { msg = (await response.json()).error || msg; } catch (e) { /* kein JSON */ }
+      throw new Error(msg);
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = att.filename;
+    img.title = 'In voller Größe öffnen';
+    img.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
+    box.replaceChildren(img);
+    box.dataset.loaded = '1';
+    box.hidden = false;
+    btn.textContent = '👁️ Ausblenden';
+  } catch (error) {
+    showError('Vorschau fehlgeschlagen: ' + error.message);
+    btn.textContent = '👁️ Ansehen';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Anhänge aus einer Mail entfernen – die Mail selbst (Text, Absender, Datum, Flags) bleibt erhalten
+async function stripAttachments(mail, attachments) {
+  const names = attachments.map(a => '• ' + a.filename + ' (' + formatSize(a.size || 0) + ')').join('\n');
+  const ok = confirm(
+    (attachments.length === 1 ? 'Diesen Anhang' : 'Diese ' + attachments.length + ' Anhänge') +
+    ' endgültig aus der Mail entfernen?\n\n' + names +
+    '\n\nDie Mail bleibt erhalten; an Stelle des Anhangs steht ein kurzer Hinweis.' +
+    '\nTipp: Vorher herunterladen, wenn Sie die Datei noch brauchen.'
+  );
+  if (!ok) return;
+
+  try {
+    const formData = new FormData();
+    formData.append('server', getCredential('server'));
+    formData.append('port', getCredential('port'));
+    formData.append('user', getCredential('user'));
+    formData.append('pass', getCredential('pass'));
+    formData.append('ssl', getCredential('ssl'));
+    formData.append('folder', mail.folderFull || mail.folder || '');
+    formData.append('uid', mail.uid);
+    formData.append('parts', attachments.map(a => a.partNum).join(','));
+    await appendSecurityTokens(formData);
+
+    const response = await fetch('imap-strip-attachments.php', { method: 'POST', body: formData });
+    await fetchCsrfToken();
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Unbekannter Fehler');
+    }
+
+    // Mail im Baum aktualisieren: neue UID, neue Größe
+    const folder = mail.folderFull || mail.folder;
+    updateMailInTree(imapData, result.oldUid, folder, result.newUid, result.newSize);
+    localStorage.setItem('imapTreeData', JSON.stringify(imapData));
+    treemapCache.clear();
+    currentData = imapData;
+    closeModal();
+    showSuccess('Anhänge entfernt – ' + formatSize(result.saved) + ' freigegeben.');
+    showVisualization();
+  } catch (error) {
+    console.error('Fehler beim Entfernen der Anhänge:', error);
+    showError('Anhänge konnten nicht entfernt werden: ' + error.message);
+  }
+}
+
+// UID/Größe einer Mail im Datenbaum ändern und Ordnergrößen anpassen
+function updateMailInTree(node, oldUid, folder, newUid, newSize) {
+  if (!node.children) return false;
+  for (const child of node.children) {
+    if (child.type === 'mail' && String(child.uid) === String(oldUid) &&
+        (child.folderFull === folder || child.folder === folder)) {
+      const diff = (child.size || 0) - newSize;
+      child.uid = newUid;
+      child.size = newSize;
+      if (node.childrenTotalSize) node.childrenTotalSize -= diff;
+      if (node.size) node.size -= diff;
+      return diff;
+    }
+    if (child.children) {
+      const diff = updateMailInTree(child, oldUid, folder, newUid, newSize);
+      if (diff !== false) {
+        if (node.childrenTotalSize) node.childrenTotalSize -= diff;
+        return diff;
+      }
+    }
+  }
+  return false;
 }
 
 // Ordner komplett leeren — 3-stufige Bestätigung

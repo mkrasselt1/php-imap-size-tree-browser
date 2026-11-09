@@ -6,6 +6,7 @@ require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
 require_once __DIR__ . '/altcha.php';
 require_once __DIR__ . '/session-auth.php';
+require_once __DIR__ . '/mime-util.php';
 
 csrf_enforce();
 altcha_enforce();
@@ -53,71 +54,56 @@ if (!$structure) {
     json_fail('E-Mail-Struktur nicht verfügbar', 200);
 }
 
-function part_param($part, string $name): ?string {
-    foreach (['parameters', 'dparameters'] as $prop) {
-        if (!empty($part->$prop) && is_array($part->$prop)) {
-            foreach ($part->$prop as $p) {
-                if (strtolower($p->attribute) === $name) return $p->value;
-            }
-        }
-    }
-    return null;
-}
-
-/** Inhalt eines Teils dekodieren und in UTF-8 umwandeln. */
-function decode_part(string $body, $part): string {
-    $enc = (int) ($part->encoding ?? 0);
-    if ($enc === 3) $body = base64_decode($body);
-    elseif ($enc === 4) $body = quoted_printable_decode($body);
-    return to_utf8((string) $body, part_param($part, 'charset'));
-}
-
 $text = '';
 $html = '';
 $attachments = [];
+$inlineImages = []; // Content-ID => Teil (für eingebettete Bilder im HTML)
 
-/**
- * MIME-Baum rekursiv durchlaufen. FT_PEEK: Abrufen setzt kein \Seen.
- * Teilnummern nach IMAP-Schema ("1", "2.1", …).
- */
-function walk_parts($inbox, int $uid, $part, string $partNum, string &$text, string &$html, array &$attachments): void {
-    $filename = part_param($part, 'filename') ?? part_param($part, 'name');
-    $disposition = isset($part->disposition) ? strtolower($part->disposition) : '';
-    $isAttachment = $disposition === 'attachment' || ($filename !== null && $filename !== '');
-
-    if (!empty($part->parts)) {
-        foreach ($part->parts as $i => $sub) {
-            $subNum = $partNum === '' ? (string) ($i + 1) : $partNum . '.' . ($i + 1);
-            walk_parts($inbox, $uid, $sub, $subNum, $text, $html, $attachments);
-        }
-        return;
+foreach (list_leaf_parts($structure) as $leaf) {
+    $part = $leaf['part'];
+    if ($leaf['cid'] && in_array($leaf['mime'], PREVIEW_IMAGE_TYPES, true)) {
+        $inlineImages[$leaf['cid']] = $leaf;
     }
-
-    $num = $partNum === '' ? '1' : $partNum;
-    if ($isAttachment) {
+    if ($leaf['attachment']) {
         $attachments[] = [
-            'filename' => safe_imap_utf8((string) $filename) ?: 'anhang.bin',
-            'size'     => isset($part->bytes) ? (int) $part->bytes : null,
-            'partNum'  => $num,
+            'filename'  => $leaf['filename'] ?: 'anhang.bin',
+            'size'      => isset($part->bytes) ? (int) $part->bytes : null,
+            'partNum'   => $leaf['num'],
+            'mime'      => $leaf['mime'],
+            'previewable' => in_array($leaf['mime'], PREVIEW_IMAGE_TYPES, true),
         ];
-        return;
+        continue;
     }
+    if ($leaf['mime'] !== 'text/plain' && $leaf['mime'] !== 'text/html') continue;
+    if (strlen($text) + strlen($html) > MAX_BODY_BYTES) continue;
 
-    if ((int) $part->type === 0) {
-        $subtype = strtolower($part->subtype ?? '');
-        if ($subtype !== 'plain' && $subtype !== 'html') return;
-        if (strlen($text) + strlen($html) > MAX_BODY_BYTES) return;
-        $raw = $partNum === ''
-            ? imap_body($inbox, $uid, FT_UID | FT_PEEK)
-            : imap_fetchbody($inbox, $uid, $num, FT_UID | FT_PEEK);
-        if ($raw === false) return;
-        $decoded = decode_part($raw, $part);
-        if ($subtype === 'plain') $text .= $decoded;
-        else $html .= $decoded;
-    }
+    // FT_PEEK: Abrufen setzt kein \Seen
+    $raw = empty($structure->parts)
+        ? imap_body($inbox, $uid, FT_UID | FT_PEEK)
+        : imap_fetchbody($inbox, $uid, $leaf['num'], FT_UID | FT_PEEK);
+    if ($raw === false) continue;
+    if ($leaf['mime'] === 'text/plain') $text .= decode_part($raw, $part);
+    else $html .= decode_part($raw, $part);
 }
 
-walk_parts($inbox, $uid, $structure, '', $text, $html, $attachments);
+// Eingebettete Bilder (cid:) direkt im HTML anzeigen – als data:-URL, max. 2 MB je Bild / 8 MB gesamt
+if ($html !== '' && $inlineImages) {
+    $budget = 8 * 1024 * 1024;
+    $html = preg_replace_callback('/cid:([^"\'\s)>]+)/i', function ($m) use ($inbox, $uid, $inlineImages, &$budget) {
+        $cid = rawurldecode($m[1]);
+        $leaf = $inlineImages[$cid] ?? null;
+        $bytes = $leaf && isset($leaf['part']->bytes) ? (int) $leaf['part']->bytes : PHP_INT_MAX;
+        if (!$leaf || $bytes > 2 * 1024 * 1024 * 4 / 3 || $bytes > $budget) {
+            return $m[0];
+        }
+        $raw = imap_fetchbody($inbox, $uid, $leaf['num'], FT_UID | FT_PEEK);
+        if ($raw === false) return $m[0];
+        $data = decode_transfer($raw, $leaf['part']);
+        $budget -= strlen($data);
+        return 'data:' . $leaf['mime'] . ';base64,' . base64_encode($data);
+    }, $html);
+}
+
 imap_close($inbox);
 
 $truncated = false;

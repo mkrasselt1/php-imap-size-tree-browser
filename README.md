@@ -10,6 +10,9 @@ Analyse und Visualisierung der Speicherbelegung eines IMAP-Kontos. Zeigt die Gro
 - Progressiver Scan fuer grosse Postfaecher (>5GB) mit Fortschrittsanzeige
 - Erweiterte Analyse fuer Ordner mit >1000 E-Mails
 - E-Mail-Details anzeigen, Anhaenge herunterladen, E-Mails loeschen
+- Bild-Anhaenge direkt in der Vorschau ansehen; eingebettete Bilder in HTML-Mails werden angezeigt
+- **Nur die Anhaenge loeschen**: einzelne oder alle Anhaenge aus einer Mail entfernen – Text, Absender,
+  Datum und Markierungen bleiben erhalten, an Stelle des Anhangs steht ein kurzer Hinweis
 - Demo-Modus mit Beispieldaten
 - Schnellauswahl fuer gaengige E-Mail-Anbieter (Gmail, Outlook, Yahoo, iCloud, Web.de, GMX)
 
@@ -89,6 +92,8 @@ Analyse und Visualisierung der Speicherbelegung eines IMAP-Kontos. Zeigt die Gro
 - `imap-download.php` — Anhaenge herunterladen
 - `imap-delete.php` — E-Mail loeschen
 - `imap-delete-folder.php` — Ordner leeren
+- `imap-strip-attachments.php` — Anhaenge aus einer Mail entfernen (neue Version speichern, pruefen, dann Original loeschen)
+- `mime-util.php` — MIME-Teile auflisten und Anhaenge aus dem Rohtext entfernen
 
 ### Sicherheit (PHP)
 - `bootstrap.php` — Gemeinsame Basis: Cookies, Sicherheits-Header, JSON, UTF-8

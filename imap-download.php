@@ -57,7 +57,22 @@ if ($enc === 3) {
     $body = quoted_printable_decode($body);
 }
 
-// Immer als Download ausliefern, nie im Browser rendern (HTML/SVG-Anhänge wären sonst XSS)
+// Bildvorschau: nur echte Rasterbilder (Typ am Inhalt erkannt, nicht an der Endung) inline ausliefern
+if (($_POST['preview'] ?? '') === '1') {
+    $info = @getimagesizefromstring($body);
+    $mime = $info ? (string) $info['mime'] : '';
+    if (!in_array($mime, ['image/png', 'image/jpeg', 'image/gif', 'image/webp'], true)) {
+        json_fail('Für diesen Anhang gibt es keine Vorschau.', 415);
+    }
+    header('Content-Type: ' . $mime);
+    header('Content-Disposition: inline');
+    header('Content-Length: ' . strlen($body));
+    header("Content-Security-Policy: default-src 'none'; sandbox");
+    echo $body;
+    exit;
+}
+
+// Sonst immer als Download ausliefern, nie im Browser rendern (HTML/SVG-Anhänge wären sonst XSS)
 $ascii = preg_replace('/[^\x20-\x7E]/', '_', $filename);
 header('Content-Type: application/octet-stream');
 header('Content-Disposition: attachment; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($filename));
