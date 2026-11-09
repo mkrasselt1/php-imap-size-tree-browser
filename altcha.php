@@ -65,6 +65,11 @@ function altcha_create_challenge(): array {
 /** Jede gelöste Challenge darf nur einmal verwendet werden (Replay-Schutz). */
 function altcha_mark_used(string $challenge): bool {
     $dir = imapsize_data_dir('altcha-used');
+    if (!is_dir($dir) || !is_writable($dir)) {
+        // Ohne beschreibbares Verzeichnis kein Replay-Schutz – aber die App bleibt benutzbar
+        error_log('imapsize: ALTCHA-Replay-Schutz inaktiv, Verzeichnis nicht beschreibbar: ' . $dir);
+        return true;
+    }
 
     // Gelegentlich aufräumen: Einträge älter als die Gültigkeit sind wertlos
     if (random_int(1, 50) === 1) {
