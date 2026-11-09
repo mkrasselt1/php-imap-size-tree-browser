@@ -1,9 +1,6 @@
 <?php
-set_time_limit(300);
-ini_set('max_execution_time', 300);
+set_time_limit(120);
 ini_set('memory_limit', '512M');
-
-header('Content-Type: application/json');
 
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
@@ -13,262 +10,133 @@ require_once __DIR__ . '/session-auth.php';
 csrf_enforce();
 altcha_enforce();
 
-// Hilfsfunktion für robuste UTF-8 Dekodierung
-function safe_imap_utf8($text) {
-    if (empty($text)) return $text;
-
-    // IMAP Modified UTF-7 Ordnernamen dekodieren (z.B. "Entw&APw-rfe" -> "Entwürfe")
-    if (strpos($text, '&') !== false && strpos($text, '-') !== false) {
-        $decoded = @mb_convert_encoding($text, 'UTF-8', 'UTF7-IMAP');
-        if ($decoded !== false && !empty(trim($decoded))) {
-            return $decoded;
-        }
-    }
-
-    // MIME-Header dekodieren (z.B. "=?UTF-8?B?..." Subjects)
-    $decoded = @imap_utf8($text);
-    if ($decoded !== false && !empty(trim($decoded))) {
-        return $decoded;
-    }
-
-    if (function_exists('mb_decode_mimeheader')) {
-        $decoded = @mb_decode_mimeheader($text);
-        if ($decoded !== false && !empty(trim($decoded))) {
-            return $decoded;
-        }
-    }
-
-    return $text;
-}
-
 $params = get_imap_params();
 $mailbox = $params['mailbox'];
-$user = $params['user'];
-$pass = $params['pass'];
+$folder = validate_folder($_POST['folder'] ?? '', $mailbox);
+$uid = validate_uid($_POST['uid'] ?? '');
+session_write_close();
 
-$folder = $_POST['folder'] ?? '';
-$uid    = $_POST['uid'] ?? '';
+// Maximale Textlänge, die an den Browser geht (sehr große Mails sonst mehrere MB JSON)
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-if (!$folder || !$uid) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Fehlende Parameter']);
-    exit;
-}
-
-// Set IMAP timeout to fail faster on wrong credentials
-imap_timeout(IMAP_OPENTIMEOUT, 10);
-imap_timeout(IMAP_READTIMEOUT, 10);
-imap_timeout(IMAP_WRITETIMEOUT, 10);
-imap_timeout(IMAP_CLOSETIMEOUT, 10);
-
-// Zuerst zur Mailbox verbinden, dann zum spezifischen Ordner wechseln
-$inbox = @imap_open($mailbox, $user, $pass);
+imapsize_timeouts(15);
+// Direkt im Ordner öffnen, schreibgeschützt: Ansehen markiert die Mail nicht als gelesen
+$inbox = @imap_open($folder, $params['user'], $params['pass'], OP_READONLY);
 if (!$inbox) {
-    $error = imap_last_error();
-    echo json_encode([
-        'error' => 'IMAP-Verbindung fehlgeschlagen',
+    $error = imap_last_error() ?: '';
+    json_fail('IMAP-Verbindung fehlgeschlagen', 200, [
         'details' => $error,
-        'message' => strpos($error, 'AUTHENTICATE') !== false || strpos($error, 'LOGIN') !== false
+        'message' => (stripos($error, 'AUTHENTICATE') !== false || stripos($error, 'LOGIN') !== false)
             ? 'Benutzername oder Passwort falsch'
-            : 'Verbindung zum Server fehlgeschlagen'
+            : 'Verbindung zum Server oder Ordner fehlgeschlagen',
     ]);
-    exit;
 }
 
-// Zum spezifischen Ordner wechseln
-$reopened = @imap_reopen($inbox, $folder);
-if (!$reopened) {
-    echo json_encode([
-        'error' => 'Ordner nicht gefunden',
-        'details' => 'Der angegebene Ordner konnte nicht geöffnet werden: ' . $folder,
-        'folder' => $folder
-    ]);
-    imap_close($inbox);
-    exit;
-}
-
-// Header holen - versuche verschiedene Methoden
-$header = @imap_headerinfo($inbox, $uid, FT_UID);
+$msgno = @imap_msgno($inbox, $uid);
+$header = $msgno ? @imap_headerinfo($inbox, $msgno) : false;
 if (!$header) {
-    // Versuche mit Message-Number statt UID
-    $msgno = imap_msgno($inbox, $uid);
-    if ($msgno !== false && $msgno > 0) {
-        $header = @imap_headerinfo($inbox, $msgno);
-    }
-
-    if (!$header) {
-        // Noch mehr Debug-Informationen
-        $check = imap_check($inbox);
-        $folderStatus = $check ? "Ordner: {$check->Mailbox}, Mails: {$check->Nmsgs}" : "Ordner-Status unbekannt";
-
-        // Versuche alle UIDs in diesem Ordner zu listen
-        $allUids = [];
-        if ($check && $check->Nmsgs > 0) {
-            $overview = imap_fetch_overview($inbox, "1:{$check->Nmsgs}");
-            foreach ($overview as $msg) {
-                $allUids[] = $msg->uid;
-            }
-        }
-
-        echo json_encode([
-            'error' => 'E-Mail nicht gefunden',
-            'details' => 'Die angegebene UID existiert nicht oder ist ungültig',
-            'uid' => $uid,
-            'folder' => $folder,
-            'folderStatus' => $folderStatus,
-            'msgno' => $msgno,
-            'availableUids' => array_slice($allUids, 0, 10), // Nur erste 10 UIDs
-            'totalUids' => count($allUids),
-            'imapError' => imap_last_error()
-        ]);
-        imap_close($inbox);
-        exit;
-    }
+    imap_close($inbox);
+    json_fail('E-Mail nicht gefunden', 200, ['details' => 'Die Mail existiert nicht mehr (evtl. gelöscht oder verschoben).']);
 }
 
-// Absender und Empfänger extrahieren
-$from = '';
-if (isset($header->fromaddress)) {
-    $from = safe_imap_utf8($header->fromaddress);
-} elseif (isset($header->from) && isset($header->from[0])) {
-    $from = safe_imap_utf8($header->from[0]->mailbox . '@' . $header->from[0]->host);
-}
-
-$to = '';
-if (isset($header->toaddress)) {
-    $to = safe_imap_utf8($header->toaddress);
-} elseif (isset($header->to) && isset($header->to[0])) {
-    $to = safe_imap_utf8($header->to[0]->mailbox . '@' . $header->to[0]->host);
-}
-
-// Subject - robuste Behandlung
-$subject = '';
-if (isset($header->subject)) {
-    $subject = safe_imap_utf8($header->subject);
-    // Zusätzliche Bereinigung für kaputte Encoding
-    if (!$subject || trim($subject) === '') {
-        $subject = isset($header->Subject) ? safe_imap_utf8($header->Subject) : '';
-    }
-}
-if (!$subject) {
+$from = isset($header->fromaddress) ? safe_imap_utf8($header->fromaddress) : '';
+$to = isset($header->toaddress) ? safe_imap_utf8($header->toaddress) : '';
+$subject = isset($header->subject) ? safe_imap_utf8($header->subject) : '';
+if (!$subject || trim($subject) === '') {
     $subject = 'Kein Betreff';
 }
+$date = isset($header->date) ? to_utf8($header->date) : '';
 
-// Datum hinzufügen
-$date = isset($header->date) ? $header->date : '';
-
-// Text und HTML-Teil extrahieren
 $structure = imap_fetchstructure($inbox, $uid, FT_UID);
 if (!$structure) {
-    echo json_encode([
-        'error' => 'E-Mail-Struktur nicht verfügbar',
-        'details' => 'Die E-Mail-Struktur konnte nicht geladen werden',
-        'uid' => $uid
-    ]);
     imap_close($inbox);
-    exit;
+    json_fail('E-Mail-Struktur nicht verfügbar', 200);
 }
-$textBody = '';
-$htmlBody = '';
+
+function part_param($part, string $name): ?string {
+    foreach (['parameters', 'dparameters'] as $prop) {
+        if (!empty($part->$prop) && is_array($part->$prop)) {
+            foreach ($part->$prop as $p) {
+                if (strtolower($p->attribute) === $name) return $p->value;
+            }
+        }
+    }
+    return null;
+}
+
+/** Inhalt eines Teils dekodieren und in UTF-8 umwandeln. */
+function decode_part(string $body, $part): string {
+    $enc = (int) ($part->encoding ?? 0);
+    if ($enc === 3) $body = base64_decode($body);
+    elseif ($enc === 4) $body = quoted_printable_decode($body);
+    return to_utf8((string) $body, part_param($part, 'charset'));
+}
+
+$text = '';
+$html = '';
 $attachments = [];
 
-if (isset($structure->parts) && count($structure->parts)) {
-    // Recursive function to extract text/html from all levels
-    function getBodies($inbox, $uid, $parts, $prefix = '')
-    {
-        $result = ['text' => '', 'html' => ''];
-        foreach ($parts as $i => $part) {
-            $partNum = $prefix . ($i + 1);
-            if ($part->type == 0 && strtolower($part->subtype) == 'plain') {
-                $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
-                if ($body !== false) {
-                    $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
-                    $result['text'] .= $bodyDecoded;
-                }
-            }
-            if ($part->type == 0 && strtolower($part->subtype) == 'html') {
-                $body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
-                if ($body !== false) {
-                    $bodyDecoded = ($part->encoding == 3) ? base64_decode($body) : ($part->encoding == 4 ? quoted_printable_decode($body) : $body);
-                    $result['html'] .= $bodyDecoded;
-                }
-            }
-            // If multipart, recurse
-            if (isset($part->parts) && count($part->parts)) {
-                $subResult = getBodies($inbox, $uid, $part->parts, $partNum . '.');
-                $result['text'] .= $subResult['text'];
-                $result['html'] .= $subResult['html'];
-            }
-            // Attachments: nur Metadaten sammeln
-            $isAttachment = false;
-            $filename = '';
-            if (isset($part->disposition) && strtolower($part->disposition) === 'attachment') {
-                $isAttachment = true;
-            }
-            if (isset($part->parameters)) {
-                foreach ($part->parameters as $param) {
-                    if (strtolower($param->attribute) === 'name') {
-                        $filename = $param->value;
-                        $isAttachment = true;
-                    }
-                }
-            }
-            if (isset($part->dparameters)) {
-                foreach ($part->dparameters as $param) {
-                    if (strtolower($param->attribute) === 'filename') {
-                        $filename = $param->value;
-                        $isAttachment = true;
-                    }
-                }
-            }
-            if ($isAttachment && $filename) {
-                global $attachments, $uid, $folder;
-                $filename = safe_imap_utf8($filename);
-                $attachments[] = [
-                    'filename' => $filename,
-                    'size' => isset($part->bytes) ? $part->bytes : null,
-                    'partNum' => $partNum,
-                    'uid' => $uid,
-                    'folder' => $folder
-                ];
-            }
+/**
+ * MIME-Baum rekursiv durchlaufen. FT_PEEK: Abrufen setzt kein \Seen.
+ * Teilnummern nach IMAP-Schema ("1", "2.1", …).
+ */
+function walk_parts($inbox, int $uid, $part, string $partNum, string &$text, string &$html, array &$attachments): void {
+    $filename = part_param($part, 'filename') ?? part_param($part, 'name');
+    $disposition = isset($part->disposition) ? strtolower($part->disposition) : '';
+    $isAttachment = $disposition === 'attachment' || ($filename !== null && $filename !== '');
+
+    if (!empty($part->parts)) {
+        foreach ($part->parts as $i => $sub) {
+            $subNum = $partNum === '' ? (string) ($i + 1) : $partNum . '.' . ($i + 1);
+            walk_parts($inbox, $uid, $sub, $subNum, $text, $html, $attachments);
         }
-        return $result;
+        return;
     }
-    $bodies = getBodies($inbox, $uid, $structure->parts);
-    $textBody = $bodies['text'];
-    $htmlBody = $bodies['html'];
-} else {
-    // Singlepart-Mail wie gehabt
-    $body = imap_body($inbox, $uid, FT_UID);
-    if ($body === false) {
-        $textBody = '';
-        $htmlBody = '';
-    } else {
-        if ($structure->type == 0 && strtolower($structure->subtype) == 'plain') {
-            $textBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
-        }
-        if ($structure->type == 0 && strtolower($structure->subtype) == 'html') {
-            $htmlBody = ($structure->encoding == 3) ? base64_decode($body) : ($structure->encoding == 4 ? quoted_printable_decode($body) : $body);
-        }
+
+    $num = $partNum === '' ? '1' : $partNum;
+    if ($isAttachment) {
+        $attachments[] = [
+            'filename' => safe_imap_utf8((string) $filename) ?: 'anhang.bin',
+            'size'     => isset($part->bytes) ? (int) $part->bytes : null,
+            'partNum'  => $num,
+        ];
+        return;
+    }
+
+    if ((int) $part->type === 0) {
+        $subtype = strtolower($part->subtype ?? '');
+        if ($subtype !== 'plain' && $subtype !== 'html') return;
+        if (strlen($text) + strlen($html) > MAX_BODY_BYTES) return;
+        $raw = $partNum === ''
+            ? imap_body($inbox, $uid, FT_UID | FT_PEEK)
+            : imap_fetchbody($inbox, $uid, $num, FT_UID | FT_PEEK);
+        if ($raw === false) return;
+        $decoded = decode_part($raw, $part);
+        if ($subtype === 'plain') $text .= $decoded;
+        else $html .= $decoded;
     }
 }
 
+walk_parts($inbox, $uid, $structure, '', $text, $html, $attachments);
 imap_close($inbox);
 
-echo json_encode([
-    'subject' => $subject,
-    'from' => $from,
-    'to' => $to,
-    'date' => $date,
-    'text' => $textBody,
-    'html' => $htmlBody,
+$truncated = false;
+if (strlen($text) > MAX_BODY_BYTES) { $text = mb_strcut($text, 0, MAX_BODY_BYTES, 'UTF-8'); $truncated = true; }
+if (strlen($html) > MAX_BODY_BYTES) { $html = mb_strcut($html, 0, MAX_BODY_BYTES, 'UTF-8'); $truncated = true; }
+
+foreach ($attachments as &$a) {
+    $a['uid'] = $uid;
+    $a['folder'] = $folder;
+}
+unset($a);
+
+json_out([
+    'subject'     => $subject,
+    'from'        => $from,
+    'to'          => $to,
+    'date'        => $date,
+    'text'        => $text,
+    'html'        => $html,
+    'truncated'   => $truncated,
     'attachments' => $attachments,
-    'debug' => [
-        'uid' => $uid,
-        'folder' => $folder,
-        'rawSubject' => $header->subject ?? '',
-        'headerFrom' => $header->fromaddress ?? '',
-        'headerDate' => $header->date ?? ''
-    ]
-], JSON_UNESCAPED_UNICODE);
+]);

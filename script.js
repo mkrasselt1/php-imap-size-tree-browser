@@ -1405,9 +1405,11 @@ function createMailModal(mailContent, mail) {
 
   if (mailContent.html) {
     const iframe = document.createElement('iframe');
-    iframe.sandbox = 'allow-same-origin';
+    iframe.sandbox = 'allow-same-origin allow-popups allow-popups-to-escape-sandbox';
+    iframe.referrerPolicy = 'no-referrer';
     iframe.style.cssText = 'width: 100%; min-height: 200px; border: 1px solid #ccc; border-radius: 4px;';
-    iframe.srcdoc = mailContent.html;
+    // CSP im iframe: keine externen Bilder/Tracking-Pixel, keine Formulare oder Skripte
+    iframe.srcdoc = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: cid:; font-src data:"><base target="_blank">` + mailContent.html;
     bodyDetail.appendChild(iframe);
   } else {
     const pre = document.createElement('pre');

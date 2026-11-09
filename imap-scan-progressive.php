@@ -1,9 +1,6 @@
 <?php
 set_time_limit(120);
-ini_set('max_execution_time', 120);
 ini_set('memory_limit', '256M');
-
-header('Content-Type: application/json');
 
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
@@ -13,387 +10,271 @@ require_once __DIR__ . '/session-auth.php';
 csrf_enforce();
 altcha_enforce();
 
-// Hilfsfunktion für robuste UTF-8 Dekodierung
-function safe_imap_utf8($text) {
-    if (empty($text)) return $text;
-
-    // IMAP Modified UTF-7 Ordnernamen dekodieren (z.B. "Entw&APw-rfe" -> "Entwürfe")
-    if (strpos($text, '&') !== false && strpos($text, '-') !== false) {
-        $decoded = @mb_convert_encoding($text, 'UTF-8', 'UTF7-IMAP');
-        if ($decoded !== false && !empty(trim($decoded))) {
-            return $decoded;
-        }
-    }
-
-    // MIME-Header dekodieren (z.B. "=?UTF-8?B?..." Subjects)
-    $decoded = @imap_utf8($text);
-    if ($decoded !== false && !empty(trim($decoded))) {
-        return $decoded;
-    }
-
-    if (function_exists('mb_decode_mimeheader')) {
-        $decoded = @mb_decode_mimeheader($text);
-        if ($decoded !== false && !empty(trim($decoded))) {
-            return $decoded;
-        }
-    }
-
-    return $text;
-}
-
 $params = get_imap_params();
 $mailbox = $params['mailbox'];
-$user = $params['user'];
-$pass = $params['pass'];
 
-// Progressive Scan Parameter
-$action = $_POST['action'] ?? 'init';
-$folderIndex = (int)($_POST['folderIndex'] ?? 0);
-$cacheKey = $_POST['cacheKey'] ?? '';
+$action      = (string) ($_POST['action'] ?? 'init');
+$folderIndex = max(0, (int) ($_POST['folderIndex'] ?? 0));
+$cacheKey    = (string) ($_POST['cacheKey'] ?? '');
 
-// Validate cacheKey format
 if ($cacheKey !== '' && !preg_match('/^scan_[a-f0-9]{32}$/', $cacheKey)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Ungültiger Cache-Key']);
-    exit;
+    json_fail('Ungültiger Cache-Key');
+}
+// Ein Scan gehört zu genau einer Sitzung – fremde Cache-Keys sind wertlos
+if ($cacheKey !== '' && empty($_SESSION['scans'][$cacheKey])) {
+    json_fail('Scan-Session nicht gefunden. Bitte neu starten.', 404);
 }
 
-// IMAP-Verbindung mit Timeouts
-imap_timeout(IMAP_OPENTIMEOUT, 30);
-imap_timeout(IMAP_READTIMEOUT, 30);
-imap_timeout(IMAP_WRITETIMEOUT, 30);
-imap_timeout(IMAP_CLOSETIMEOUT, 15);
-
-$inbox = @imap_open($mailbox, $user, $pass);
-if (!$inbox) {
-    echo json_encode(['error' => 'IMAP-Verbindung fehlgeschlagen', 'details' => imap_last_error()]);
-    exit;
-}
-
-// Cache-Verzeichnis erstellen
-$cacheDir = __DIR__ . '/cache';
-if (!is_dir($cacheDir)) {
-    mkdir($cacheDir, 0755, true);
-}
+// Zwischenergebnisse (mit Betreffzeilen!) liegen außerhalb des Webroots
+$cacheDir = imapsize_data_dir('scans');
 
 if ($action === 'init') {
-    // Cleanup: alte Scan-Verzeichnisse löschen (>1h)
-    foreach (glob($cacheDir . '/scan_*', GLOB_ONLYDIR) as $oldDir) {
-        if (filemtime($oldDir) < time() - 3600) {
-            array_map('unlink', glob($oldDir . '/*.json'));
+    // Aufräumen: Scans älter als 1 Stunde
+    foreach (glob($cacheDir . '/scan_*', GLOB_ONLYDIR) ?: [] as $oldDir) {
+        if (@filemtime($oldDir) < time() - 3600) {
+            array_map('unlink', glob($oldDir . '/*.json') ?: []);
             @rmdir($oldDir);
         }
     }
-    // Legacy: alte einzelne Cache-Dateien auch aufräumen
-    foreach (glob($cacheDir . '/scan_*.json') as $oldFile) {
-        if (filemtime($oldFile) < time() - 3600) {
-            @unlink($oldFile);
-        }
+    $cacheKey = 'scan_' . bin2hex(random_bytes(16));
+    $_SESSION['scans'][$cacheKey] = time();
+    // Nur die letzten 5 Scans je Sitzung merken
+    if (count($_SESSION['scans']) > 5) {
+        $_SESSION['scans'] = array_slice($_SESSION['scans'], -5, null, true);
     }
+}
+session_write_close(); // lange IMAP-Aufrufe sollen die Sitzung nicht blockieren
 
-    // Ordnerliste abrufen
-    $folders = imap_list($inbox, $mailbox, '*');
-    if (!$folders) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Keine Ordner gefunden']);
-        exit;
-    }
+imapsize_timeouts(30);
+$inbox = @imap_open($mailbox, $params['user'], $params['pass'], OP_READONLY);
+if (!$inbox) {
+    json_fail('IMAP-Verbindung fehlgeschlagen', 200, ['details' => imap_last_error()]);
+}
 
-    // Cache-Key = eigenes Verzeichnis pro Scan
-    $cacheKey = 'scan_' . md5($params['server'] . $user . time());
-    $scanDir = $cacheDir . '/' . $cacheKey;
-    mkdir($scanDir, 0755, true);
+/** Lesbarer Ordnername inkl. Pfad, z. B. "Kunden / Alt" – im flachen Ergebnis sonst mehrdeutig. */
+function display_name(string $folderFull, string $mailbox, string $delimiter): string {
+    $relative = substr($folderFull, strlen($mailbox));
+    $parts = array_map('safe_imap_utf8', explode($delimiter ?: '.', $relative));
+    return implode(' / ', $parts);
+}
 
-    // Meta-Datei: nur Ordnerliste + Mailbox-String
-    $meta = [
-        'folders' => $folders,
-        'mailbox' => $mailbox,
-        'totalFolders' => count($folders),
-        'startTime' => time()
-    ];
-    file_put_contents($scanDir . '/meta.json', json_encode($meta), LOCK_EX);
-
+if ($action === 'init') {
+    $boxes = imap_getmailboxes($inbox, $mailbox, '*');
     imap_close($inbox);
-    echo json_encode([
-        'status' => 'initialized',
-        'cacheKey' => $cacheKey,
-        'totalFolders' => count($folders),
-        'folders' => array_map(function($folder) use ($mailbox) {
-            $shortName = str_replace($mailbox, '', $folder);
-            $shortName = safe_imap_utf8($shortName);
-            return ['full' => $folder, 'name' => $shortName];
-        }, $folders)
-    ], JSON_UNESCAPED_UNICODE);
+    if (!$boxes) {
+        json_fail('Keine Ordner gefunden', 200);
+    }
 
-} elseif ($action === 'scan') {
-    // Einzelnen Ordner scannen — Ergebnis in eigener Datei
-    if (!$cacheKey) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Cache-Key fehlt']);
-        exit;
+    $folders = [];
+    foreach ($boxes as $b) {
+        if ($b->attributes & LATT_NOSELECT) continue;
+        $folders[] = ['full' => $b->name, 'delimiter' => $b->delimiter ?: '.'];
     }
 
     $scanDir = $cacheDir . '/' . $cacheKey;
-    $metaFile = $scanDir . '/meta.json';
-    if (!file_exists($metaFile)) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Scan-Session nicht gefunden. Bitte neu starten.']);
-        exit;
-    }
+    @mkdir($scanDir, 0700, true);
+    file_put_contents($scanDir . '/meta.json', json_encode([
+        'folders'      => $folders,
+        'mailbox'      => $mailbox,
+        'totalFolders' => count($folders),
+        'startTime'    => time(),
+    ]), LOCK_EX);
 
-    $meta = json_decode(file_get_contents($metaFile), true);
-    if (!is_array($meta) || !isset($meta['folders'])) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Scan-Session beschädigt. Bitte neu starten.']);
-        exit;
-    }
+    json_out([
+        'status'       => 'initialized',
+        'cacheKey'     => $cacheKey,
+        'totalFolders' => count($folders),
+        'folders'      => array_map(function ($f) use ($mailbox) {
+            return ['full' => $f['full'], 'name' => display_name($f['full'], $mailbox, $f['delimiter'])];
+        }, $folders),
+    ]);
+    exit;
+}
 
+/** Meta-Daten eines Scans laden (Mailbox muss zur aktuellen Anmeldung passen). */
+function load_meta(string $cacheDir, string $cacheKey, string $mailbox): array {
+    $meta = json_decode((string) @file_get_contents($cacheDir . '/' . $cacheKey . '/meta.json'), true);
+    if (!is_array($meta) || !isset($meta['folders']) || ($meta['mailbox'] ?? '') !== $mailbox) {
+        json_fail('Scan-Session nicht gefunden. Bitte neu starten.', 200);
+    }
+    return $meta;
+}
+
+if ($action === 'scan') {
+    if ($cacheKey === '') {
+        imap_close($inbox);
+        json_fail('Cache-Key fehlt');
+    }
+    $meta = load_meta($cacheDir, $cacheKey, $mailbox);
     if ($folderIndex >= count($meta['folders'])) {
         imap_close($inbox);
-        echo json_encode(['error' => 'Ungültiger Ordner-Index']);
-        exit;
+        json_fail('Ungültiger Ordner-Index');
     }
 
-    $folderFull = $meta['folders'][$folderIndex];
-    $folderResult = scanSingleFolder($inbox, $meta['mailbox'], $folderFull);
-
-    // Ergebnis in eigener Datei speichern (keine Race-Condition!)
-    file_put_contents($scanDir . '/folder_' . $folderIndex . '.json', json_encode($folderResult), LOCK_EX);
-
-    // Fortschritt zählen: wie viele folder_*.json existieren?
-    $scanned = count(glob($scanDir . '/folder_*.json'));
-
+    $folder = $meta['folders'][$folderIndex];
+    $folderResult = scanSingleFolder($inbox, $mailbox, $folder['full'], $folder['delimiter']);
     imap_close($inbox);
-    echo json_encode([
-        'status' => 'folder_scanned',
-        'folder' => $folderResult,
-        'progress' => [
-            'current' => $scanned,
-            'total' => $meta['totalFolders'],
-            'percent' => round(($scanned / $meta['totalFolders']) * 100, 1)
-        ]
-    ], JSON_UNESCAPED_UNICODE);
-
-} elseif ($action === 'extended-scan') {
-    // Schritt 2b: Erweiterten Scan für spezifischen Ordner (braucht keinen cacheKey)
-    $folderFullPath = $_POST['folderFullPath'] ?? '';
-    $startIndex = (int)($_POST['startIndex'] ?? 0);
-    $batchSize = (int)($_POST['batchSize'] ?? 500);
-
-    if (!$folderFullPath) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Ordner-Pfad fehlt']);
-        exit;
-    }
-
-    // Ordner öffnen
-    $box = @imap_reopen($inbox, $folderFullPath);
-    if (!$box) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Ordner konnte nicht geöffnet werden']);
-        exit;
-    }
-
-    $check = imap_check($inbox);
-    if (!$check || $check->Nmsgs == 0) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Ordner ist leer']);
-        exit;
-    }
-
-    $endIndex = min($startIndex + $batchSize, $check->Nmsgs);
-    $mails = [];
-    $totalSize = 0;
-
-    for ($i = $startIndex + 1; $i <= $endIndex; $i++) {
-        $header = imap_headerinfo($inbox, $i);
-        if (!$header) continue;
-
-        $size = $header->Size ?? 0;
-        $totalSize += $size;
-
-        $uid = imap_uid($inbox, $i);
-        if (!$uid) continue;
-
-        $subject = '';
-        if (isset($header->subject)) {
-            $subject = safe_imap_utf8($header->subject);
-        }
-
-        $mails[] = [
-            'name' => $subject ?: 'Kein Betreff',
-            'type' => 'mail',
-            'size' => $size,
-            'uid' => $uid,
-            'messageNumber' => $i
-        ];
-    }
-
-    // Nur die größten Mails zurückgeben
-    usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $bigMails = array_slice($mails, 0, 20); // Top 20 aus diesem Batch
-
-    imap_close($inbox);
-    echo json_encode([
-        'status' => 'extended-scan-complete',
-        'mails' => $bigMails,
-        'totalSize' => $totalSize,
-        'scannedRange' => [$startIndex + 1, $endIndex],
-        'totalMails' => $check->Nmsgs,
-        'hasMore' => $endIndex < $check->Nmsgs,
-        'nextStartIndex' => $endIndex
-    ], JSON_UNESCAPED_UNICODE);
-
-} elseif ($action === 'finalize') {
-    // Ergebnisse aus einzelnen Ordner-Dateien zusammenfassen
-    if (!$cacheKey) {
-        imap_close($inbox);
-        echo json_encode(['error' => 'Cache-Key fehlt']);
-        exit;
-    }
 
     $scanDir = $cacheDir . '/' . $cacheKey;
-    $metaFile = $scanDir . '/meta.json';
-    if (!file_exists($metaFile)) {
+    file_put_contents($scanDir . '/folder_' . $folderIndex . '.json', json_encode($folderResult, JSON_INVALID_UTF8_SUBSTITUTE), LOCK_EX);
+    $scanned = count(glob($scanDir . '/folder_*.json') ?: []);
+
+    json_out([
+        'status'   => 'folder_scanned',
+        'folder'   => $folderResult,
+        'progress' => [
+            'current' => $scanned,
+            'total'   => $meta['totalFolders'],
+            'percent' => $meta['totalFolders'] ? round(($scanned / $meta['totalFolders']) * 100, 1) : 100,
+        ],
+    ]);
+    exit;
+}
+
+if ($action === 'extended-scan') {
+    $folderFullPath = validate_folder($_POST['folderFullPath'] ?? '', $mailbox);
+    $startIndex = max(0, (int) ($_POST['startIndex'] ?? 0));
+    $batchSize = min(1000, max(1, (int) ($_POST['batchSize'] ?? 500)));
+
+    if (!@imap_reopen($inbox, $folderFullPath, OP_READONLY)) {
         imap_close($inbox);
-        echo json_encode(['error' => 'Scan-Session nicht gefunden.']);
-        exit;
+        json_fail('Ordner konnte nicht geöffnet werden', 200);
+    }
+    $total = imap_num_msg($inbox);
+    if ($total === 0) {
+        imap_close($inbox);
+        json_fail('Ordner ist leer', 200);
     }
 
-    $meta = json_decode(file_get_contents($metaFile), true);
-
-    // Alle Ordner-Ergebnisse einlesen
-    $results = [];
-    $folderFiles = glob($scanDir . '/folder_*.json');
-    sort($folderFiles); // Reihenfolge sicherstellen
-    foreach ($folderFiles as $ff) {
-        $folderData = json_decode(file_get_contents($ff), true);
-        if ($folderData) {
-            $results[] = $folderData;
+    $endIndex = min($startIndex + $batchSize, $total);
+    $mails = [];
+    $totalSize = 0;
+    if ($startIndex < $endIndex) {
+        // Ein Overview-Aufruf für den ganzen Block statt zwei Aufrufen pro Mail
+        foreach (@imap_fetch_overview($inbox, ($startIndex + 1) . ':' . $endIndex) ?: [] as $o) {
+            $size = (int) ($o->size ?? 0);
+            $totalSize += $size;
+            if (empty($o->uid)) continue;
+            $mails[] = [
+                'name'          => isset($o->subject) ? (safe_imap_utf8($o->subject) ?: 'Kein Betreff') : 'Kein Betreff',
+                'type'          => 'mail',
+                'size'          => $size,
+                'uid'           => (int) $o->uid,
+                'messageNumber' => (int) ($o->msgno ?? 0),
+                'folderFull'    => $folderFullPath,
+            ];
         }
     }
+    imap_close($inbox);
 
-    // Hierarchie aufbauen
-    $tree = buildFolderHierarchy($results, $meta['mailbox'] ?? $mailbox);
+    usort($mails, function ($a, $b) { return $b['size'] <=> $a['size']; });
 
-    // Scan-Verzeichnis aufräumen
-    array_map('unlink', glob($scanDir . '/*.json'));
+    json_out([
+        'status'         => 'extended-scan-complete',
+        'mails'          => array_slice($mails, 0, 20), // Top 20 aus diesem Block
+        'totalSize'      => $totalSize,
+        'scannedRange'   => [$startIndex + 1, $endIndex],
+        'totalMails'     => $total,
+        'hasMore'        => $endIndex < $total,
+        'nextStartIndex' => $endIndex,
+    ]);
+    exit;
+}
+
+if ($action === 'finalize') {
+    imap_close($inbox);
+    if ($cacheKey === '') {
+        json_fail('Cache-Key fehlt');
+    }
+    load_meta($cacheDir, $cacheKey, $mailbox);
+
+    $scanDir = $cacheDir . '/' . $cacheKey;
+    $files = glob($scanDir . '/folder_*.json') ?: [];
+    natsort($files);
+    $results = [];
+    foreach ($files as $ff) {
+        $data = json_decode((string) file_get_contents($ff), true);
+        if ($data) $results[] = $data;
+    }
+
+    array_map('unlink', glob($scanDir . '/*.json') ?: []);
     @rmdir($scanDir);
 
-    imap_close($inbox);
-    echo json_encode($tree, JSON_UNESCAPED_UNICODE);
+    $total = 0;
+    foreach ($results as $r) $total += (int) ($r['size'] ?? 0);
+    usort($results, function ($a, $b) { return ($b['size'] ?? 0) <=> ($a['size'] ?? 0); });
 
-} else {
-    imap_close($inbox);
-    echo json_encode(['error' => 'Unbekannte Aktion']);
+    json_out([
+        'name'              => 'E-Mail-Postfach',
+        'type'              => 'root',
+        'children'          => $results,
+        'childrenTotalSize' => $total,
+    ]);
+    exit;
 }
 
-function scanSingleFolder($inbox, $mailbox, $folderFull) {
-    $delimiter = '.';
-    $info = imap_getmailboxes($inbox, $mailbox, '*');
-    if ($info && isset($info[0]->delimiter)) {
-        $delimiter = $info[0]->delimiter;
-    }
+imap_close($inbox);
+json_fail('Unbekannte Aktion');
 
-    $shortName = str_replace($mailbox, '', $folderFull);
-    if (strpos($folderFull, $mailbox) === 0) {
-        $shortName = substr($folderFull, strlen($mailbox));
-    }
-    if (strpos($shortName, $delimiter) !== false) {
-        $parts = explode($delimiter, $shortName);
-        $shortName = end($parts);
-    }
-
-    // Ordnername korrekt dekodieren für Umlaute
-    $shortName = safe_imap_utf8($shortName);
-
-    // Ordner öffnen
-    $box = @imap_reopen($inbox, $folderFull);
-    if (!$box) {
-        return [
-            'name' => $shortName,
-            'folderFull' => $folderFull,
-            'type' => 'folder',
-            'size' => 0,
-            'childrenTotalSize' => 0,
-            'children' => [],
-            'error' => 'Ordner konnte nicht geöffnet werden'
-        ];
-    }
-
-    $check = imap_check($inbox);
-    if (!$check || $check->Nmsgs == 0) {
-        return [
-            'name' => $shortName,
-            'folderFull' => $folderFull,
-            'type' => 'folder',
-            'size' => 0,
-            'childrenTotalSize' => 0,
-            'children' => []
-        ];
-    }
-
-    $children = [];
-    $totalSize = 0;
-    $mails = [];
-
-    // Maximal 500 Mails pro Ordner holen — ein einziger schneller Aufruf
-    $numMsgs = min($check->Nmsgs, 500);
-    $overview = @imap_fetch_overview($inbox, "1:{$numMsgs}");
-    if (!$overview) $overview = [];
-
-    foreach ($overview as $msg) {
-        $size = $msg->size ?? 0;
-        $totalSize += $size;
-
-        $uid = $msg->uid ?? 0;
-        if (!$uid) continue;
-
-        $subject = isset($msg->subject) ? safe_imap_utf8($msg->subject) : '';
-
-        $mails[] = [
-            'name' => $subject ?: 'Kein Betreff',
-            'type' => 'mail',
-            'size' => $size,
-            'uid' => $uid,
-            'folderFull' => $folderFull,
-        ];
-    }
-
-    // Alle Mails nach Größe sortieren
-    usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $children = array_merge($children, $mails);
-
-    return [
-        'name' => $shortName,
+function scanSingleFolder($inbox, string $mailbox, string $folderFull, string $delimiter): array {
+    $base = [
+        'name'       => display_name($folderFull, $mailbox, $delimiter),
         'folderFull' => $folderFull,
-        'type' => 'folder',
-        'size' => $totalSize,
-        'childrenTotalSize' => $totalSize,
-        'children' => $children,
-        'totalMails' => $numMsgs,
-        'scannedMails' => $numMsgs
-    ];
-}
-
-function buildFolderHierarchy($folderResults, $mailbox) {
-    $delimiter = '.';
-    $tree = [
-        'name' => 'E-Mail-Postfach',
-        'type' => 'root',
-        'children' => [],
-        'childrenTotalSize' => 0
+        'type'       => 'folder',
+        'size'       => 0,
+        'childrenTotalSize' => 0,
+        'children'   => [],
     ];
 
-    $totalSize = 0;
-
-    foreach ($folderResults as $folder) {
-        $totalSize += $folder['size'];
-        $tree['children'][] = $folder;
+    if (!@imap_reopen($inbox, $folderFull, OP_READONLY)) {
+        return $base + ['error' => 'Ordner konnte nicht geöffnet werden'];
+    }
+    $count = imap_num_msg($inbox);
+    if ($count === 0) {
+        return $base;
     }
 
-    $tree['childrenTotalSize'] = $totalSize;
+    // Maximal 500 Mails pro Ordner in einem Aufruf; größere Ordner per "extended-scan"
+    $numMsgs = min($count, 500);
+    $mails = [];
+    $totalSize = 0;
+    foreach (@imap_fetch_overview($inbox, "1:{$numMsgs}") ?: [] as $msg) {
+        $size = (int) ($msg->size ?? 0);
+        $totalSize += $size;
+        if (empty($msg->uid)) continue;
+        $mails[] = [
+            'name'       => isset($msg->subject) ? (safe_imap_utf8($msg->subject) ?: 'Kein Betreff') : 'Kein Betreff',
+            'type'       => 'mail',
+            'size'       => $size,
+            'uid'        => (int) $msg->uid,
+            'folderFull' => $folderFull,
+        ];
+    }
+    usort($mails, function ($a, $b) { return $b['size'] <=> $a['size']; });
 
-    return $tree;
+    $result = array_merge($base, [
+        'size'              => $totalSize,
+        'childrenTotalSize' => $totalSize,
+        'children'          => $mails,
+        'totalMails'        => $count,
+        'scannedMails'      => $numMsgs,
+    ]);
+    if ($count > $numMsgs) {
+        // Rest des Ordners als geschätzter Block anzeigen – sonst erscheinen große Ordner
+        // in der Treemap viel zu klein. Klick darauf bietet die erweiterte Analyse an.
+        $rest = $count - $numMsgs;
+        $estimate = $numMsgs > 0 ? (int) round($totalSize / $numMsgs * $rest) : 0;
+        $result['children'][] = [
+            'name'       => "≈ {$rest} weitere Mails (geschätzt)",
+            'type'       => 'other-mails',
+            'size'       => $estimate,
+            'count'      => $rest,
+            'warning'    => true,
+            'details'    => "Nur die ersten {$numMsgs} von {$count} Mails wurden einzeln analysiert; die Größe des Rests ist geschätzt.",
+            'folderFull' => $folderFull,
+        ];
+        $result['size'] += $estimate;
+        $result['childrenTotalSize'] += $estimate;
+    }
+    return $result;
 }
-?>

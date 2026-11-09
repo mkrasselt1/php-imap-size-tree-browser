@@ -1,9 +1,6 @@
 <?php
 set_time_limit(300);
-ini_set('max_execution_time', 300);
 ini_set('memory_limit', '512M');
-
-header('Content-Type: application/json');
 
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
@@ -13,142 +10,102 @@ require_once __DIR__ . '/session-auth.php';
 csrf_enforce();
 altcha_enforce();
 
-// Hilfsfunktion für robuste UTF-8 Dekodierung
-function safe_imap_utf8($text) {
-    if (empty($text)) return $text;
-
-    // IMAP Modified UTF-7 Ordnernamen dekodieren (z.B. "Entw&APw-rfe" -> "Entwürfe")
-    if (strpos($text, '&') !== false && strpos($text, '-') !== false) {
-        $decoded = @mb_convert_encoding($text, 'UTF-8', 'UTF7-IMAP');
-        if ($decoded !== false && !empty(trim($decoded))) {
-            return $decoded;
-        }
-    }
-
-    // MIME-Header dekodieren (z.B. "=?UTF-8?B?..." Subjects)
-    $decoded = @imap_utf8($text);
-    if ($decoded !== false && !empty(trim($decoded))) {
-        return $decoded;
-    }
-
-    if (function_exists('mb_decode_mimeheader')) {
-        $decoded = @mb_decode_mimeheader($text);
-        if ($decoded !== false && !empty(trim($decoded))) {
-            return $decoded;
-        }
-    }
-
-    return $text;
-}
-
 $params = get_imap_params();
 $mailbox = $params['mailbox'];
-$user = $params['user'];
-$pass = $params['pass'];
+session_write_close(); // lange Scans sollen andere Requests der Sitzung nicht blockieren
 
-$inbox = @imap_open($mailbox, $user, $pass);
+imapsize_timeouts(30);
+$inbox = @imap_open($mailbox, $params['user'], $params['pass'], OP_READONLY);
 if (!$inbox) {
-    echo json_encode(['error' => 'IMAP-Verbindung fehlgeschlagen', 'details' => imap_last_error()]);
-    exit;
+    json_fail('IMAP-Verbindung fehlgeschlagen', 200, ['details' => imap_last_error()]);
 }
 
-$folders = imap_list($inbox, $mailbox, '*');
+// Alle Ordner EINMAL holen (inkl. Trennzeichen) und daraus den Baum bauen.
+// Früher wurde jeder Unterordner zusätzlich rekursiv erneut gescannt → doppelte Einträge.
+$boxes = imap_getmailboxes($inbox, $mailbox, '*') ?: [];
 
-function getFolderTree($inbox, $mailbox, $folderFull) {
-    // Trenne den Ordnernamen anhand des IMAP-Trennzeichens (z.B. Punkt oder Slash)
-    $delimiter = '.';
-    $info = imap_getmailboxes($inbox, $mailbox, '*');
-    if ($info && isset($info[0]->delimiter)) {
-        $delimiter = $info[0]->delimiter;
+/** Mails eines Ordners mit einem einzigen Overview-Aufruf lesen. */
+function scan_folder_mails($inbox, string $folderFull): array {
+    if (!@imap_reopen($inbox, $folderFull, OP_READONLY)) {
+        return [[], 0, 'Ordner konnte nicht geöffnet werden'];
     }
-    $shortName = str_replace($mailbox, '', $folderFull);
-
-    if (strpos($folderFull, $mailbox) === 0) {
-        $shortName = substr($folderFull, strlen($mailbox));
+    $count = imap_num_msg($inbox);
+    if ($count === 0) {
+        return [[], 0, null];
     }
-    if (strpos($shortName, $delimiter) !== false) {
-        $parts = explode($delimiter, $shortName);
-        $shortName = end($parts);
-    }
-
-    // Ordnername korrekt dekodieren für Umlaute
-    $shortName = safe_imap_utf8($shortName);
-
-    // Ordner öffnen
-    $box = @imap_reopen($inbox, $folderFull);
-    if (!$box) return [
-        'name' => $shortName,
-        'children' => [],
-        'childrenTotalSize' => 0
-    ];
-
-    $numMessages = imap_num_msg($inbox);
     $mails = [];
-    $totalSize = 0;
-
-    // Alle Mails durchgehen und Größe sammeln
-    for ($i = 1; $i <= $numMessages; $i++) {
-        $overview = imap_fetch_overview($inbox, $i);
-        if ($overview && isset($overview[0]->size)) {
-            $mail = [
-                'name' => safe_imap_utf8($overview[0]->subject ?? '(kein Betreff)'),
-                'size' => $overview[0]->size,
-                'uid'  => $overview[0]->uid,
-                'type' => 'mail',
-                'folderFull' => $folderFull,
-            ];
-            $mails[] = $mail;
-            $totalSize += $overview[0]->size;
-        }
+    $total = 0;
+    foreach (@imap_fetch_overview($inbox, "1:{$count}") ?: [] as $o) {
+        $size = (int) ($o->size ?? 0);
+        $total += $size;
+        if (empty($o->uid)) continue;
+        $mails[] = [
+            'name'       => isset($o->subject) ? (safe_imap_utf8($o->subject) ?: '(kein Betreff)') : '(kein Betreff)',
+            'size'       => $size,
+            'uid'        => (int) $o->uid,
+            'type'       => 'mail',
+            'folderFull' => $folderFull,
+        ];
     }
-
-    // Alle Mails nach Größe sortieren — alle einzeln anzeigen
-    usort($mails, function($a, $b) { return $b['size'] - $a['size']; });
-    $children = $mails;
-
-    // Subfolder suchen, aber nur echte Unterordner
-    $subfolders = imap_list($inbox, $mailbox, $shortName . $delimiter . '*');
-    if ($subfolders) {
-        foreach ($subfolders as $sub) {
-            if ($sub !== $folderFull) {
-                $children[] = getFolderTree($inbox, $mailbox, $sub);
-            }
-        }
-    }
-
-    // Summe aller Kindgrößen berechnen
-    $childrenTotalSize = 0;
-    foreach ($children as $child) {
-        if (isset($child['size'])) {
-            $childrenTotalSize += $child['size'];
-        }
-    }
-
-    // Ordner (children) nach Größe sortieren: zuerst große Ordner/Mails
-    usort($children, function($a, $b) {
-        $sizeA = $a['size'] ?? ($a['childrenTotalSize'] ?? 0);
-        $sizeB = $b['size'] ?? ($b['childrenTotalSize'] ?? 0);
-        return $sizeB <=> $sizeA;
-    });
-
-    return [
-        'name' => $shortName,
-        'children' => $children,
-        'childrenTotalSize' => $childrenTotalSize
-    ];
+    usort($mails, function ($a, $b) { return $b['size'] <=> $a['size']; });
+    return [$mails, $total, null];
 }
 
-$tree = [
-    'name' => 'Root',
-    'children' => []
-];
+// Knoten je Ordner anlegen
+$nodes = [];
+foreach ($boxes as $box) {
+    $full = $box->name;
+    $relative = substr($full, strlen($mailbox));
+    $delim = $box->delimiter ?: '.';
+    $segments = explode($delim, $relative);
+    [$mails, $total, $error] = ($box->attributes & LATT_NOSELECT) ? [[], 0, null] : scan_folder_mails($inbox, $full);
 
-if ($folders) {
-    foreach ($folders as $fullName) {
-        $tree['children'][] = getFolderTree($inbox, $mailbox, $fullName);
-    }
+    $node = [
+        'name'       => safe_imap_utf8(end($segments)),
+        'folderFull' => $full,
+        'type'       => 'folder',
+        'children'   => $mails,
+        'childrenTotalSize' => $total,
+    ];
+    if ($error) $node['error'] = $error;
+    $nodes[$relative] = [
+        'node'   => $node,
+        'depth'  => count($segments),
+        'parent' => count($segments) > 1 ? implode($delim, array_slice($segments, 0, -1)) : null,
+    ];
 }
 
 imap_close($inbox);
 
-echo json_encode($tree, JSON_UNESCAPED_UNICODE);
+// Hierarchie aufbauen: tiefste Ordner zuerst in ihre Eltern kopieren – so ist jeder Teilbaum
+// vollständig, bevor er selbst eingehängt wird.
+$order = array_keys($nodes);
+usort($order, function ($a, $b) use ($nodes) { return $nodes[$b]['depth'] <=> $nodes[$a]['depth']; });
+$roots = [];
+foreach ($order as $rel) {
+    $parent = $nodes[$rel]['parent'];
+    if ($parent !== null && isset($nodes[$parent])) {
+        $nodes[$parent]['node']['children'][] = $nodes[$rel]['node'];
+    } else {
+        $roots[] = $nodes[$rel]['node'];
+    }
+}
+
+/** Größen aufsummieren und Kinder nach Größe sortieren. */
+function finalize_node(array &$node): int {
+    $sum = 0;
+    foreach ($node['children'] as &$child) {
+        $sum += isset($child['type']) && $child['type'] === 'folder' ? finalize_node($child) : (int) ($child['size'] ?? 0);
+    }
+    unset($child);
+    usort($node['children'], function ($a, $b) {
+        return ($b['size'] ?? $b['childrenTotalSize'] ?? 0) <=> ($a['size'] ?? $a['childrenTotalSize'] ?? 0);
+    });
+    $node['childrenTotalSize'] = $sum;
+    return $sum;
+}
+
+$tree = ['name' => 'Root', 'children' => $roots];
+finalize_node($tree);
+
+json_out($tree);

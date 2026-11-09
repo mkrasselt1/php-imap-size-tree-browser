@@ -1,6 +1,4 @@
 <?php
-header('Content-Type: application/json');
-
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
 require_once __DIR__ . '/altcha.php';
@@ -10,30 +8,22 @@ csrf_enforce();
 altcha_enforce();
 
 $params = get_imap_params();
-$mailbox = $params['mailbox'];
-$user = $params['user'];
-$pass = $params['pass'];
+$folder = validate_folder($_POST['folder'] ?? '', $params['mailbox']);
+$uid    = validate_uid($_POST['uid'] ?? '');
+session_write_close();
 
-$folder = $_POST['folder'] ?? '';
-$uid    = $_POST['uid'] ?? '';
-
-if (!$folder || !$uid) {
-    echo json_encode(['success' => false, 'error' => 'Fehlende Parameter']);
-    exit;
-}
-
-$inbox = @imap_open($folder, $user, $pass);
+imapsize_timeouts(30);
+$inbox = @imap_open($folder, $params['user'], $params['pass']);
 if (!$inbox) {
-    echo json_encode(['success' => false, 'error' => imap_last_error()]);
-    exit;
+    json_fail((string) imap_last_error(), 200);
 }
 
-if (@imap_delete($inbox, $uid, FT_UID)) {
-    imap_expunge($inbox);
+if (@imap_delete($inbox, (string) $uid, FT_UID)) {
+    @imap_expunge($inbox);
     imap_close($inbox);
-    echo json_encode(['success' => true]);
+    json_out(['success' => true]);
 } else {
     $error = imap_last_error();
     imap_close($inbox);
-    echo json_encode(['success' => false, 'error' => $error]);
+    json_fail((string) $error, 200);
 }

@@ -1,9 +1,6 @@
 <?php
 set_time_limit(300);
-ini_set('max_execution_time', 300);
 ini_set('memory_limit', '512M');
-
-header('Content-Type: application/json');
 
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
@@ -14,44 +11,56 @@ csrf_enforce();
 altcha_enforce();
 
 $params = get_imap_params();
-$mailbox = $params['mailbox'];
-$user = $params['user'];
-$pass = $params['pass'];
+$folder  = validate_folder($_POST['folder'] ?? '', $params['mailbox']);
+$uid     = validate_uid($_POST['uid'] ?? '');
+$partNum = validate_part_number($_POST['partNum'] ?? '');
+$filename = sanitize_filename((string) ($_POST['filename'] ?? 'attachment.bin'));
+session_write_close();
 
-$folder   = $_POST['folder'] ?? '';
-$uid      = $_POST['uid'] ?? '';
-$partNum  = $_POST['partNum'] ?? '';
-$filename = sanitize_filename($_POST['filename'] ?? 'attachment.bin');
-
-if (!$folder || !$uid) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Fehlende Parameter']);
-    exit;
-}
-
-$inbox = @imap_open($folder, $user, $pass);
+imapsize_timeouts(30);
+$inbox = @imap_open($folder, $params['user'], $params['pass'], OP_READONLY);
 if (!$inbox) {
-    echo json_encode(['error' => 'IMAP-Verbindung fehlgeschlagen', 'details' => imap_last_error()]);
-    exit;
+    json_fail('IMAP-Verbindung fehlgeschlagen', 502, ['details' => imap_last_error()]);
 }
 
 $structure = imap_fetchstructure($inbox, $uid, FT_UID);
-$part = $structure->parts[$partNum - 1] ?? null;
-if (!$part) {
-    http_response_code(404);
-    imap_close($inbox);
-    echo "Attachment nicht gefunden";
-    exit;
+
+/** Teil anhand der IMAP-Teilnummer finden, auch verschachtelt ("2.1"). */
+function find_part($structure, string $partNum) {
+    $part = $structure;
+    foreach (explode('.', $partNum) as $idx) {
+        if (empty($part->parts) || !isset($part->parts[(int) $idx - 1])) {
+            // Einteilige Mail: Teil "1" ist der Body selbst
+            return ($partNum === '1' && empty($structure->parts)) ? $structure : null;
+        }
+        $part = $part->parts[(int) $idx - 1];
+    }
+    return $part;
 }
-$body = imap_fetchbody($inbox, $uid, $partNum, FT_UID);
-if ($part->encoding == 3) { // BASE64
+
+$part = $structure ? find_part($structure, $partNum) : null;
+if (!$part) {
+    imap_close($inbox);
+    json_fail('Anhang nicht gefunden', 404);
+}
+
+$body = imap_fetchbody($inbox, $uid, $partNum, FT_UID | FT_PEEK);
+imap_close($inbox);
+if ($body === false) {
+    json_fail('Anhang konnte nicht geladen werden', 502);
+}
+
+$enc = (int) ($part->encoding ?? 0);
+if ($enc === 3) {
     $body = base64_decode($body);
-} elseif ($part->encoding == 4) { // QUOTED-PRINTABLE
+} elseif ($enc === 4) {
     $body = quoted_printable_decode($body);
 }
 
-imap_close($inbox);
-
+// Immer als Download ausliefern, nie im Browser rendern (HTML/SVG-Anhänge wären sonst XSS)
+$ascii = preg_replace('/[^\x20-\x7E]/', '_', $filename);
 header('Content-Type: application/octet-stream');
-header('Content-Disposition: attachment; filename="' . $filename . '"');
+header('Content-Disposition: attachment; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($filename));
+header('Content-Length: ' . strlen($body));
+header("Content-Security-Policy: default-src 'none'; sandbox");
 echo $body;

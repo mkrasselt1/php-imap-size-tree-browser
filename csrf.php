@@ -6,9 +6,7 @@
  * Include this file in all PHP endpoints that accept POST requests.
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/bootstrap.php'; // sichere Session + Header
 
 /**
  * Generate a new CSRF token and store it in the session.
@@ -35,9 +33,12 @@ function csrf_token(): string {
  * Tokens expire after 2 hours.
  */
 function csrf_validate(): bool {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        return false;
+    }
     $token = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
 
-    if (empty($token) || empty($_SESSION['csrf_token'])) {
+    if (!is_string($token) || $token === '' || empty($_SESSION['csrf_token'])) {
         return false;
     }
 
@@ -56,9 +57,6 @@ function csrf_validate(): bool {
  */
 function csrf_enforce(): void {
     if (!csrf_validate()) {
-        http_response_code(403);
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Ungültiges CSRF-Token. Bitte laden Sie die Seite neu.']);
-        exit;
+        json_fail('Ungültiges CSRF-Token. Bitte laden Sie die Seite neu.', 403);
     }
 }
