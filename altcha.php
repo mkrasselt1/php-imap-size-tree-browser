@@ -36,8 +36,13 @@ function altcha_hmac_key(): string {
     $new = bin2hex(random_bytes(32));
     if (@file_put_contents($file, $new, LOCK_EX) !== false) {
         @chmod($file, 0600);
+        return $key = $new;
     }
-    return $key = $new;
+    // Datenverzeichnis nicht beschreibbar (z. B. open_basedir): stabiler Schlüssel aus
+    // serverinternen Werten, die von außen nicht bekannt sind – besser wäre IMAPSIZE_ALTCHA_KEY.
+    error_log('imapsize: Datenverzeichnis nicht beschreibbar (' . imapsize_data_dir() . '), bitte IMAPSIZE_ALTCHA_KEY oder IMAPSIZE_DATA_DIR setzen');
+    $st = @stat(__FILE__) ?: [];
+    return $key = hash('sha256', implode('|', [php_uname(), __FILE__, $st['ino'] ?? '', $st['ctime'] ?? '', ini_get('session.save_path')]));
 }
 
 function altcha_create_challenge(): array {
